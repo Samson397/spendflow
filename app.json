@@ -4,26 +4,52 @@
     "slug": "SpendFlow",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "main": "index.js",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#667eea"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/logo.png"
     },
     "android": {
+      "icon": "./assets/logo.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#667eea"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo.png",
+      "bundler": "metro",
+      "name": "SpendFlow - Smart Finance Management",
+      "shortName": "SpendFlow",
+      "lang": "en",
+      "scope": "/",
+      "themeColor": "#667eea",
+      "backgroundColor": "#667eea",
+      "description": "Master Your Money, Amplify Your Life - Smart personal finance management",
+      "display": "standalone",
+      "startUrl": "/",
+      "orientation": "portrait",
+      "preferRelatedApplications": false,
+      "manifest": "./web/manifest.json",
+      "build": {
+        "babel": {
+          "include": ["@expo/html-elements"]
+        }
+      },
+      "meta": {
+        "apple-mobile-web-app-capable": "yes",
+        "apple-mobile-web-app-status-bar-style": "black-translucent",
+        "apple-mobile-web-app-title": "SpendFlow"
+      }
     }
   }
 }

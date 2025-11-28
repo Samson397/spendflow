@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpendFlow - Quick Add</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <img src="icons/icon-32.png" alt="SpendFlow" class="logo-icon">
+        <span class="logo-text">SpendFlow</span>
+      </div>
+      <div class="header-buttons">
+        <button id="refreshBtn" class="settings-btn" title="Refresh Data">🔄</button>
+        <button id="settingsBtn" class="settings-btn" title="Settings">⚙️</button>
+      </div>
+    </div>
+
+    <!-- Auth Check -->
+    <div id="authSection" class="auth-section" style="display: none;">
+      <div class="auth-message">
+        <h3>🔐 Sign In Required</h3>
+        <p>Please sign in to SpendFlow to use the extension</p>
+        <button id="signInBtn" class="primary-btn">Open SpendFlow</button>
+      </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div id="statsSection" class="stats-section" style="display: none;">
+      <div class="stat-card">
+        <span class="stat-label">This Month</span>
+        <span id="monthlySpent" class="stat-value">£0.00</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Balance</span>
+        <span id="totalBalance" class="stat-value">£0.00</span>
+      </div>
+    </div>
+
+    <!-- Quick Add Form -->
+    <div id="addSection" class="add-section" style="display: none;">
+      <form id="expenseForm">
+        <div class="form-group">
+          <label for="amount">Amount</label>
+          <div class="amount-input">
+            <span class="currency">£</span>
+            <input type="number" id="amount" placeholder="0.00" step="0.01" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="category">Category</label>
+          <select id="category" required>
+            <option value="">Select category...</option>
+            <option value="Food & Dining">🍔 Food & Dining</option>
+            <option value="Transport">🚗 Transport</option>
+            <option value="Shopping">🛍️ Shopping</option>
+            <option value="Entertainment">🎬 Entertainment</option>
+            <option value="Bills & Utilities">⚡ Bills & Utilities</option>
+            <option value="Healthcare">🏥 Healthcare</option>
+            <option value="Education">📚 Education</option>
+            <option value="Other">📄 Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="description">Description (Optional)</label>
+          <input type="text" id="description" placeholder="What did you buy?">
+        </div>
+
+        <div class="form-group">
+          <label for="card">Card</label>
+          <select id="card" required>
+            <option value="">Select card...</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="primary-btn" id="addBtn">
+            <span class="btn-text">Add Expense</span>
+            <span class="btn-loading" style="display: none;">⏳</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Success Message -->
+    <div id="successSection" class="success-section" style="display: none;">
+      <div class="success-message">
+        <div class="success-icon">✅</div>
+        <h3>Expense Added!</h3>
+        <p id="successDetails">£0.00 added to Food & Dining</p>
+        <button id="addAnotherBtn" class="secondary-btn">Add Another</button>
+        <button id="viewAppBtn" class="primary-btn">View in App</button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loadingSection" class="loading-section">
+      <div class="loading-spinner">⏳</div>
+      <p>Loading SpendFlow...</p>
+    </div>
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

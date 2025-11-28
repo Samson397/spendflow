@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://spedflowapp.web.app/sitemap.xml
+
+# Crawl-delay for respectful crawling
+Crawl-delay: 1
+
+# Block access to sensitive areas
+Disallow: /api/
+Disallow: /_expo/
+Disallow: /admin/
+Disallow: /config/
+Disallow: /scripts/
+
+# Allow important resources
+Allow: /assets/
+Allow: /manifest.json
+Allow: /service-worker.js

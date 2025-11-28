@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "SpendFlow - Quick Expense Tracker",
+  "version": "1.0.0",
+  "description": "Quickly track expenses and check your financial stats from any website",
+  
+  "permissions": [
+    "storage",
+    "activeTab",
+    "contextMenus",
+    "scripting",
+    "tabs",
+    "alarms"
+  ],
+  
+  "host_permissions": [
+    "https://spendflow.uk/*",
+    "https://spedflowapp.web.app/*"
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SpendFlow - Add Expense",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*", "simple-data-bridge.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -46,7 +46,7 @@
   },
   "private": true,
   "devDependencies": {
-    "expo-cli": "^6.1.0",
+    "expo-cli": "^6.3.10",
     "metro": "^0.83.1"
   }
 }

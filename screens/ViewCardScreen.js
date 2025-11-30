@@ -6,34 +6,119 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { useAuth } from '../contexts/AuthContext';
 import FirebaseService from '../services/FirebaseService';
+import { safeGoBack } from '../utils/NavigationHelper';
 
 export default function ViewCardScreen({ navigation, route }) {
   const { theme } = useTheme();
   const { currency } = useCurrency();
   const { user } = useAuth();
 
-  // Get initial card data and delete callback from route params
-  const initialCard = route?.params?.card || {
-    id: 1,
-    type: 'debit',
-    name: 'Primary Account',
-    bank: 'Chase',
-    lastFour: '4567',
-    balance: '£2,847.32',
-    color: '#4f46e5',
-    expiryDate: '12/28'
+  // Debug: Check route params
+  // console.log('ViewCardScreen route params:', route.params);
+
+  // Function to validate and normalize card data
+  const validateCardData = (card) => {
+    if (!card || typeof card !== 'object') {
+      console.warn('Invalid card data received:', card);
+      return null;
+    }
+    
+    const validatedCard = {
+      id: card.id || 'unknown',
+      type: card.type || 'debit',
+      name: card.name || 'Unknown Card',
+      bank: card.bank || 'Unknown Bank',
+      lastFour: card.lastFour || '••••',
+      balance: card.balance || 0,
+      color: card.color || '#4f46e5',
+      expiryDate: card.expiryDate || '',
+      // Include any additional card properties
+      ...card
+    };
+    
+    return validatedCard;
   };
+
+  // Get initial card data from route params or use default
+  const getInitialCard = () => {
+    // First try to get card from route.params.card (direct navigation)
+    if (route?.params?.card && typeof route.params.card === 'object') {
+      const card = validateCardData(route.params.card);
+      if (card) {
+        return card;
+      }
+    }
+    
+    // Fallback: if we have a cardId, try to find it in availableCards
+    if (route?.params?.cardId && Array.isArray(route?.params?.availableCards)) {
+      const card = route.params.availableCards.find(c => c && c.id === route.params.cardId);
+      if (card) {
+        const validatedCard = validateCardData(card);
+        if (validatedCard) {
+          return validatedCard;
+        }
+      }
+    }
+    
+    // Fallback to default card data
+    return {
+      id: 'default',
+      type: 'debit',
+      name: 'Primary Account',
+      bank: 'Bank',
+      lastFour: '••••',
+      balance: 0,
+      color: '#4f46e5',
+      expiryDate: 'MM/YY'
+    };
+  };
+
+  // State for card data
+  const [cardData, setCardData] = useState(getInitialCard());
   
-  // Get available cards for switching (excluding current card)
-  const availableCards = route?.params?.availableCards || [];
-  const switchableCards = availableCards.filter(card => 
-    card.type === 'debit' && card.id !== initialCard.id
+  // State for available cards - ensure it's always an array
+  const [availableCards, setAvailableCards] = useState(
+    Array.isArray(route?.params?.availableCards) ? route.params.availableCards : []
   );
-
-  const onDeleteCard = route?.params?.onDeleteCard;
-
-  // Local state for the card data (this will be updated when editing)
-  const [cardData, setCardData] = useState(initialCard);
+  
+  // Filter switchable cards (excluding current card) with null check
+  const switchableCards = Array.isArray(availableCards) 
+    ? availableCards.filter(card => 
+        card && 
+        card.id && 
+        card.type === 'debit' && 
+        card.id !== cardData.id
+      )
+    : [];
+  
+  // Update card data when route params change
+  useEffect(() => {
+    // First try to get card from route.params.card (direct navigation)
+    if (route.params?.card && typeof route.params.card === 'object') {
+      const card = validateCardData(route.params.card);
+      if (card) {
+        setCardData(card);
+      }
+    }
+    // Fallback: if we have a cardId, try to find it in availableCards
+    else if (route.params?.cardId && Array.isArray(route.params?.availableCards)) {
+      const card = route.params.availableCards.find(c => c && c.id === route.params.cardId);
+      if (card) {
+        const validatedCard = validateCardData(card);
+        if (validatedCard) {
+          setCardData(validatedCard);
+        }
+      }
+    }
+    
+    if (route.params?.availableCards) {
+      setAvailableCards(
+        Array.isArray(route.params.availableCards) 
+          ? route.params.availableCards 
+          : []
+      );
+    }
+  }, [route.params]);
   
   // User name - get from auth context
   const [userName, setUserName] = useState('');
@@ -70,23 +155,55 @@ export default function ViewCardScreen({ navigation, route }) {
 
   // Transactions for this card
   const [transactions, setTransactions] = useState([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
 
   // Credit card billing cycle info
   const [billingCycle, setBillingCycle] = useState({});
   
   // Load transactions for this specific card from Firebase
   useEffect(() => {
-    if (user?.uid && cardData?.id) {
-      const unsubscribe = FirebaseService.subscribeToCardTransactions(
-        user.uid,
-        cardData.id,
-        (cardTransactions) => {
-          setTransactions(cardTransactions);
-        }
-      );
-
-      return unsubscribe;
+    // Don't proceed if we don't have a valid user or card ID
+    if (!user?.uid || !cardData?.id) {
+      setIsLoadingTransactions(false);
+      return;
     }
+    
+    setIsLoadingTransactions(true);
+    
+    // Convert cardId to string to ensure consistent type comparison
+    const cardId = String(cardData.id);
+    
+    const unsubscribe = FirebaseService.subscribeToCardTransactions(
+      user.uid,
+      cardId,
+      (cardTransactions) => {
+        // Ensure we have a valid array of transactions
+        if (!Array.isArray(cardTransactions)) {
+          setTransactions([]);
+          setIsLoadingTransactions(false);
+          return;
+        }
+        
+        // Sort transactions by date (newest first)
+        const sortedTransactions = [...cardTransactions].sort((a, b) => {
+          try {
+            const dateA = a.date ? new Date(a.date) : new Date(0);
+            const dateB = b.date ? new Date(b.date) : new Date(0);
+            return dateB - dateA;
+          } catch (error) {
+            return 0;
+          }
+        });
+        
+        setTransactions(sortedTransactions);
+        setIsLoadingTransactions(false);
+      }
+    );
+
+    // Cleanup subscription on unmount
+    return () => {
+      unsubscribe();
+    };
   }, [user, cardData?.id]);
 
   // Subscribe to card updates to get real-time balance changes
@@ -417,25 +534,11 @@ export default function ViewCardScreen({ navigation, route }) {
       return;
     }
 
-    
-    const currentBalance = parseFloat(String(cardData.balance || '0').replace(/[£,]/g, ''));
-    const hasBalance = currentBalance > 0;
-    
     // Simulate the switch process
     setSwitchModalVisible(false);
     
     // Show success message
     let successMessage = `All direct debits and automatic payments have been transferred from ${cardData.name} to ${selectedSwitchCard.name}.`;
-    
-    if (hasBalance) {
-      successMessage += ` Your balance of ${formatBalance(cardData.balance)} has also been transferred.`;
-    }
-    
-    successMessage += ' The old card will now be deleted.';
-    
-    setAlertModalTitle('Switch Successful');
-    setAlertModalMessage(successMessage);
-    setAlertModalVisible(true);
     
     // Delete the card after a delay
     setTimeout(() => {
@@ -454,7 +557,6 @@ export default function ViewCardScreen({ navigation, route }) {
   };
 
   const handleCreateNewCard = () => {
-    
     // Show guidance message
     setAlertModalTitle('Create New Debit Card');
     setAlertModalMessage('You will be taken to the card creation screen. After creating a new debit card, you can return here to use the switch service.');
@@ -466,23 +568,68 @@ export default function ViewCardScreen({ navigation, route }) {
     }, 2500);
   };
 
-  // Helper functions for transactions
-  const getCategoryEmoji = (category) => {
-    switch (category) {
-      case 'Groceries': return '🛒';
-      case 'Entertainment': return '🎬';
-      case 'Income': return '💰';
-      case 'Food & Drink': return '☕';
-      case 'Shopping': return '🛍️';
-      case 'Transport': return '🚇';
-      case 'Bills': return '📄';
-      case 'Health': return '🏥';
-      default: return '💳';
+  // Helper function to format category name (remove emoji if present)
+  const formatCategoryName = (category) => {
+    if (!category) return 'Other';
+    // Extract category name if it contains emoji (e.g., "🛒 Groceries" -> "Groceries")
+    return category.replace(/^[\p{Emoji}\s]*/u, '').trim() || category;
+  };
+  const getCategoryEmoji = (category, transactionType) => {
+    // First check transaction type
+    if (transactionType === 'transfer') return '🔄';
+    if (transactionType === 'refund') return '💸';
+    if (transactionType === 'income') return '💰';
+    
+    // Extract category name if it contains emoji (e.g., "🛒 Groceries" -> "Groceries")
+    const categoryName = category?.replace(/^[\p{Emoji}\s]*/u, '').trim().toLowerCase();
+    
+    // Then check category
+    switch (categoryName) {
+      case 'groceries': return '🛒';
+      case 'entertainment': return '🎬';
+      case 'income': return '💰';
+      case 'salary': return '💵';
+      case 'food':
+      case 'food & drink': 
+      case 'food & dining':
+      case 'coffee': 
+        return '☕';
+      case 'shopping': return '🛍️';
+      case 'transport':
+      case 'transportation':
+        return '🚇';
+      case 'bills':
+      case 'utilities':
+      case 'bills & utilities':
+        return '📄';
+      case 'health':
+      case 'medical':
+      case 'healthcare':
+        return '🏥';
+      case 'home':
+        return '🏠';
+      case 'transfer':
+      case 'bank transfer':
+        return '🔄';
+      case 'refund':
+        return '💸';
+      default: 
+        return transactionType === 'expense' ? '💳' : '📊';
     }
   };
 
-  const getTransactionColor = (amount) => {
-    return amount.startsWith('+') ? '#10b981' : '#ef4444';
+  const getTransactionColor = (amount, type) => {
+    if (type === 'refund') return '#3b82f6'; // Blue for refunds
+    if (type === 'transfer') return '#8b5cf6'; // Purple for transfers
+    return amount.startsWith('+') || type === 'income' ? '#10b981' : '#ef4444';
+  };
+  
+  const formatTransactionAmount = (amount, type) => {
+    // Use the same approach as the dashboard
+    const numAmount = parseFloat(String(amount || '0').replace(/[^0-9.-]/g, '')) || 0;
+    const isPositive = type === 'income' || type === 'refund' || (amount && amount.toString().startsWith('+'));
+    
+    return `${isPositive ? '+' : '-'}£${Math.abs(numAmount).toFixed(2)}`;
   };
 
   const formatDate = (dateString) => {
@@ -512,7 +659,7 @@ export default function ViewCardScreen({ navigation, route }) {
         <View style={styles.headerTop}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation, 'Wallet')}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
@@ -662,39 +809,119 @@ export default function ViewCardScreen({ navigation, route }) {
           </View>
 
           <View style={[styles.transactionsList, { backgroundColor: theme.cardBg }]}>
-            {transactions.slice(0, 5).map((transaction) => (
-              <View key={transaction.id} style={[styles.transactionItem, { backgroundColor: theme.cardBg, borderBottomColor: theme.textSecondary + '20' }]}>
-                <View style={styles.transactionLeft}>
-                  <View style={[styles.transactionIcon, { backgroundColor: theme.background[0] }]}>
-                    <Text style={styles.categoryEmoji}>{getCategoryEmoji(transaction.category)}</Text>
+            {transactions.slice(0, 5).map((transaction) => {
+              const transactionType = transaction.transactionType || 
+                                   (transaction.amount?.startsWith('+') ? 'income' : 'expense');
+              const displayAmount = formatTransactionAmount(transaction.amount, transactionType);
+              const isPositive = displayAmount.startsWith('+');
+              
+              return (
+                <View 
+                  key={transaction.id || Math.random().toString(36).substr(2, 9)}
+                  style={[
+                    styles.transactionItem, 
+                    { 
+                      backgroundColor: theme.cardBg, 
+                      borderBottomColor: theme.textSecondary + '20',
+                      opacity: transaction.status === 'pending' ? 0.7 : 1
+                    }
+                  ]}
+                >
+                  <View style={styles.transactionLeft}>
+                    <View 
+                      style={[
+                        styles.transactionIcon, 
+                        { 
+                          backgroundColor: theme.background[0],
+                          borderRadius: 12,
+                          width: 40,
+                          height: 40,
+                          justifyContent: 'center',
+                          alignItems: 'center'
+                        }
+                      ]}
+                    >
+                      <Text style={[styles.categoryEmoji, { fontSize: 18 }]}>
+                        {getCategoryEmoji(transaction.category, transactionType)}
+                      </Text>
+                    </View>
+                    <View style={styles.transactionDetails}>
+                      <Text 
+                        style={[
+                          styles.transactionDescription, 
+                          { 
+                            color: theme.text,
+                            fontWeight: '500',
+                            fontSize: 15
+                          }
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {transaction.description || 'Transaction'}
+                      </Text>
+                      <Text 
+                        style={[
+                          styles.transactionMeta, 
+                          { 
+                            color: theme.textSecondary,
+                            fontSize: 13,
+                            marginTop: 2
+                          }
+                        ]}
+                      >
+                        {formatDate(transaction.date)} • {transaction.time || ''}
+                        {transaction.status === 'pending' && ' • Pending'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.transactionDetails}>
-                    <Text style={[styles.transactionDescription, { color: theme.text }]}>{transaction.description}</Text>
-                    <Text style={[styles.transactionMeta, { color: theme.textSecondary }]}>
-                      {formatDate(transaction.date)} • {transaction.time}
+                  <View style={styles.transactionRight}>
+                    <Text 
+                      style={[
+                        styles.transactionAmount,
+                        { 
+                          color: getTransactionColor(displayAmount, transactionType),
+                          fontWeight: '600',
+                          fontSize: 15
+                        }
+                      ]}
+                    >
+                      {displayAmount}
+                    </Text>
+                    <Text 
+                      style={[
+                        styles.transactionCategory, 
+                        { 
+                          color: theme.textSecondary,
+                          fontSize: 13,
+                          textAlign: 'right',
+                          marginTop: 2
+                        }
+                      ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {formatCategoryName(transaction.category) || transactionType.charAt(0).toUpperCase() + transactionType.slice(1)}
                     </Text>
                   </View>
                 </View>
-                <View style={styles.transactionRight}>
-                  <Text style={[
-                    styles.transactionAmount,
-                    { color: getTransactionColor(transaction.amount) }
-                  ]}>
-                    {transaction.amount}
-                  </Text>
-                  <Text style={[styles.transactionCategory, { color: theme.textSecondary }]}>{transaction.category}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
-          {transactions.length === 0 && (
+          {isLoadingTransactions ? (
+            <View style={[styles.emptyTransactions, { backgroundColor: theme.cardBg }]}>
+              <Text style={styles.emptyTransactionsEmoji}>⏳</Text>
+              <Text style={[styles.emptyTransactionsTitle, { color: theme.text }]}>Loading Transactions</Text>
+              <Text style={[styles.emptyTransactionsText, { color: theme.textSecondary }]}>Please wait while we load your transactions...</Text>
+            </View>
+          ) : transactions.length === 0 ? (
             <View style={[styles.emptyTransactions, { backgroundColor: theme.cardBg }]}>
               <Text style={styles.emptyTransactionsEmoji}>💳</Text>
               <Text style={[styles.emptyTransactionsTitle, { color: theme.text }]}>No Transactions</Text>
               <Text style={[styles.emptyTransactionsText, { color: theme.textSecondary }]}>No transactions found for this card yet.</Text>
             </View>
-          )}
+          ) : null}
         </View>
 
       </ScrollView>
@@ -1307,6 +1534,87 @@ export default function ViewCardScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
+  // ... existing styles ...
+  
+  sectionContainer: {
+    marginTop: 20,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  seeAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  transactionsList: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  transactionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  transactionIcon: {
+    fontSize: 20,
+  },
+  transactionDetails: {
+    flex: 1,
+    marginRight: 8,
+  },
+  transactionDescription: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  loadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+  },
+  emptyState: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',

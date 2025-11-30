@@ -1,13 +1,14 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import SEO from '../components/SEO';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 
-const { width } = Dimensions.get('window');
-
 const FeaturesScreen = ({ navigation }) => {
+  const { width } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(width), [width]);
+
   const mainFeatures = [
     {
       icon: '💳',
@@ -142,9 +143,10 @@ const FeaturesScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <SEO 
-        title="Features - SpendFlow | Free Personal Finance & Budget Tracking"
-        description="Discover SpendFlow's features: virtual cards, budget management, savings goals, expense charts, direct debits, and complete privacy. Manual entry, no bank connections required."
-        url="https://spedflowapp.web.app/features"
+        title="Features - SpendFlow | Virtual Cards, Budgets & Privacy-First Finance"
+        description="Explore SpendFlow's complete feature set: create unlimited virtual cards, track expenses manually for better awareness, set smart budgets, achieve savings goals, and manage direct debits - all with complete privacy and no bank connections required."
+        keywords="virtual cards, manual expense tracking, budget management, savings goals, direct debits, privacy finance app, no bank connection"
+        url="https://spendflow.uk/features"
       />
       <StatusBar style="light" />
       
@@ -234,7 +236,7 @@ const FeaturesScreen = ({ navigation }) => {
               style={styles.ctaButton}
               onPress={() => navigation.navigate('SignUp')}
             >
-              <Text style={styles.ctaButtonText}>Start Free Trial</Text>
+              <Text style={styles.ctaButtonText}>Start Free</Text>
             </TouchableOpacity>
             <Text style={styles.ctaNote}>All features included • No credit card required</Text>
           </View>
@@ -246,7 +248,13 @@ const FeaturesScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (width) => {
+  const sectionWidth = width >= 1440 ? width - 160 : Math.min(width - 40, 1200);
+  const heroWidth = width >= 1440 ? width - 160 : Math.min(width - 40, 840);
+  const cardWidth = width >= 1280 ? (sectionWidth - 64) / 3 : width > 768 ? (sectionWidth - 48) / 2 : width - 40;
+  const integrationWidth = width >= 1280 ? (sectionWidth - 72) / 4 : width > 768 ? (sectionWidth - 64) / 3 : width - 40;
+
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
@@ -260,7 +268,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   heroContainer: {
-    maxWidth: 800,
+    maxWidth: heroWidth,
     width: '100%',
     alignSelf: 'center',
     alignItems: 'center',
@@ -287,7 +295,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   sectionContainer: {
-    maxWidth: 1200,
+    maxWidth: sectionWidth,
     width: '100%',
     alignSelf: 'center',
   },
@@ -315,7 +323,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     padding: 32,
     borderRadius: 16,
-    width: width > 768 ? 380 : width - 40,
+    width: cardWidth,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -369,7 +377,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     padding: 24,
     borderRadius: 12,
-    width: width > 768 ? 280 : width - 40,
+    width: integrationWidth,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -474,6 +482,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     textAlign: 'center',
   },
-});
+  });
+};
 
 export default FeaturesScreen;

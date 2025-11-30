@@ -1,10 +1,24 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-
-const { width } = Dimensions.get('window');
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Linking } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 const Footer = ({ navigation }) => {
+  const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
+  const [menuOpen, setMenuOpen] = useState(false);
   const currentYear = new Date().getFullYear();
+  const styles = useMemo(() => createStyles(screenWidth), [screenWidth]);
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenWidth(window.width);
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
+  const toggleMenu = () => {
+    setMenuOpen(!menuOpen);
+  };
 
   const footerSections = [
     {
@@ -47,55 +61,70 @@ const Footer = ({ navigation }) => {
         <View style={styles.footerContent}>
           {/* Brand Section */}
           <View style={styles.brandSection}>
-            <Text style={styles.brandName}>SpendFlow</Text>
-            <Text style={styles.brandDescription}>
-              Free personal finance tracking with complete privacy. 
-              No bank connections required - you control your data.
-            </Text>
+            <Text style={styles.followText}>Follow Us for Financial Tips</Text>
             <View style={styles.socialLinks}>
               <TouchableOpacity 
                 style={styles.socialLink}
-                onPress={() => navigation.navigate('Contact')}
+                onPress={() => Linking.openURL('https://x.com/spendflowap')}
+                accessibilityLabel="Follow us on X"
               >
-                <Text style={styles.socialIcon}>📧</Text>
+                <Ionicons name="logo-twitter" size={20} color="#ffffff" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.socialLink}
-                onPress={() => navigation.navigate('Contact')}
+                onPress={() => Linking.openURL('https://www.tiktok.com/@spendflow')}
+                accessibilityLabel="Follow us on TikTok"
               >
-                <Text style={styles.socialIcon}>🐦</Text>
+                <Ionicons name="musical-notes" size={20} color="#ffffff" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.socialLink}
-                onPress={() => navigation.navigate('Contact')}
+                onPress={() => Linking.openURL('https://www.youtube.com/@SpendFlowapp')}
+                accessibilityLabel="Subscribe on YouTube"
               >
-                <Text style={styles.socialIcon}>📘</Text>
+                <Ionicons name="logo-youtube" size={20} color="#FF0000" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.socialLink}
-                onPress={() => navigation.navigate('Contact')}
+                onPress={() => Linking.openURL('https://www.facebook.com/profile.php?id=61584095445533')}
+                accessibilityLabel="Like us on Facebook"
               >
-                <Text style={styles.socialIcon}>💼</Text>
+                <Ionicons name="logo-facebook" size={20} color="#1877F2" />
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Footer Links */}
-          <View style={styles.linksContainer}>
-            {footerSections.map((section, index) => (
-              <View key={index} style={styles.linkSection}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-                {section.links.map((link, linkIndex) => (
-                  <TouchableOpacity
-                    key={linkIndex}
-                    onPress={() => navigation.navigate(link.route)}
-                    style={styles.footerLink}
-                  >
-                    <Text style={styles.footerLinkText}>{link.name}</Text>
-                  </TouchableOpacity>
+          {/* Menu Section */}
+          <View style={styles.menuSection}>
+            <TouchableOpacity 
+              style={styles.menuButton}
+              onPress={toggleMenu}
+            >
+              <Text style={styles.menuButtonText}>Menu</Text>
+              <Text style={styles.menuArrow}>{menuOpen ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+            
+            {menuOpen && (
+              <View style={styles.dropdownMenu}>
+                {footerSections.map((section, index) => (
+                  <View key={index} style={styles.menuSectionGroup}>
+                    <Text style={styles.menuSectionTitle}>{section.title}</Text>
+                    {section.links.map((link, linkIndex) => (
+                      <TouchableOpacity
+                        key={linkIndex}
+                        onPress={() => {
+                          navigation.navigate(link.route);
+                          setMenuOpen(false);
+                        }}
+                        style={styles.menuLink}
+                      >
+                        <Text style={styles.menuLinkText}>{link.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 ))}
               </View>
-            ))}
+            )}
           </View>
         </View>
 
@@ -104,121 +133,137 @@ const Footer = ({ navigation }) => {
           <Text style={styles.copyright}>
             © {currentYear} SpendFlow. All rights reserved.
           </Text>
-          <View style={styles.bottomLinks}>
-            <TouchableOpacity onPress={() => navigation.navigate('PrivacyPolicy')}>
-              <Text style={styles.bottomLinkText}>Privacy</Text>
-            </TouchableOpacity>
-            <Text style={styles.separator}>•</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('TermsOfService')}>
-              <Text style={styles.bottomLinkText}>Terms</Text>
-            </TouchableOpacity>
-            <Text style={styles.separator}>•</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Contact')}>
-              <Text style={styles.bottomLinkText}>Support</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  footer: {
-    backgroundColor: '#1a202c',
-    paddingTop: 48,
-    paddingBottom: 24,
-  },
-  container: {
-    maxWidth: 1200,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: 20,
-  },
-  footerContent: {
-    flexDirection: width > 768 ? 'row' : 'column',
-    gap: 40,
-    marginBottom: 40,
-  },
-  brandSection: {
-    flex: width > 768 ? 1 : 0,
-    maxWidth: width > 768 ? 300 : '100%',
-  },
-  brandName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 12,
-  },
-  brandDescription: {
-    fontSize: 16,
-    color: '#a0aec0',
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  socialLinks: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  socialLink: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#2d3748',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  socialIcon: {
-    fontSize: 18,
-  },
-  linksContainer: {
-    flex: width > 768 ? 2 : 0,
-    flexDirection: width > 768 ? 'row' : 'column',
-    gap: width > 768 ? 40 : 24,
-  },
-  linkSection: {
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  footerLink: {
-    marginBottom: 12,
-  },
-  footerLinkText: {
-    fontSize: 14,
-    color: '#a0aec0',
-    lineHeight: 20,
-  },
-  bottomBar: {
-    flexDirection: width > 768 ? 'row' : 'column',
-    alignItems: width > 768 ? 'center' : 'flex-start',
-    justifyContent: 'space-between',
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: '#2d3748',
-    gap: width > 768 ? 0 : 16,
-  },
-  copyright: {
-    fontSize: 14,
-    color: '#718096',
-  },
-  bottomLinks: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  bottomLinkText: {
-    fontSize: 14,
-    color: '#a0aec0',
-  },
-  separator: {
-    fontSize: 14,
-    color: '#4a5568',
-  },
-});
+const createStyles = (width) => {
+  const isSmallScreen = width < 768;
+  const isMediumScreen = width >= 768 && width < 1024;
+  const isLargeScreen = width >= 1024;
+
+  return StyleSheet.create({
+    footer: {
+      backgroundColor: '#1a202c',
+      paddingTop: isSmallScreen ? 20 : 32,
+      paddingBottom: isSmallScreen ? 12 : 20,
+    },
+    container: {
+      maxWidth: 1200,
+      width: '100%',
+      alignSelf: 'center',
+      paddingHorizontal: isSmallScreen ? 16 : 20,
+    },
+    footerContent: {
+      flexDirection: 'row',
+      gap: isSmallScreen ? 12 : 20,
+      marginBottom: isSmallScreen ? 16 : 24,
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    brandSection: {
+      alignItems: 'center',
+    },
+    brandName: {
+      fontSize: isSmallScreen ? 16 : 18,
+      fontWeight: 'bold',
+      color: '#ffffff',
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    followText: {
+      fontSize: isSmallScreen ? 12 : 14,
+      color: '#ffffff',
+      marginBottom: 12,
+      textAlign: 'center',
+      fontWeight: '600',
+    },
+    socialLinks: {
+      flexDirection: 'row',
+      gap: isSmallScreen ? 6 : 8,
+      justifyContent: 'center',
+    },
+    socialLink: {
+      width: isSmallScreen ? 32 : 36,
+      height: isSmallScreen ? 32 : 36,
+      backgroundColor: '#2d3748',
+      borderRadius: isSmallScreen ? 16 : 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    socialIcon: {
+      fontSize: isSmallScreen ? 14 : 16,
+    },
+    menuSection: {
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    menuButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      backgroundColor: '#2d3748',
+      borderRadius: 8,
+    },
+    menuButtonText: {
+      fontSize: isSmallScreen ? 14 : 16,
+      color: '#ffffff',
+      fontWeight: '600',
+    },
+    menuArrow: {
+      fontSize: isSmallScreen ? 12 : 14,
+      color: '#ffffff',
+    },
+    dropdownMenu: {
+      position: 'absolute',
+      top: 40,
+      right: 0,
+      backgroundColor: '#2d3748',
+      borderRadius: 8,
+      padding: 20,
+      minWidth: 220,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+      zIndex: 1000,
+    },
+    menuSectionGroup: {
+      marginBottom: 20,
+    },
+    menuSectionTitle: {
+      fontSize: isSmallScreen ? 14 : 16,
+      fontWeight: '600',
+      color: '#ffffff',
+      marginBottom: 12,
+    },
+    menuLink: {
+      marginBottom: 6,
+    },
+    menuLinkText: {
+      fontSize: isSmallScreen ? 13 : 14,
+      color: '#a0aec0',
+      lineHeight: isSmallScreen ? 16 : 18,
+    },
+    bottomBar: {
+      paddingTop: isSmallScreen ? 12 : 16,
+      borderTopWidth: 1,
+      borderTopColor: '#2d3748',
+      alignItems: 'center',
+    },
+    copyright: {
+      fontSize: isSmallScreen ? 16 : 18,
+      color: '#718096',
+      textAlign: 'center',
+    },
+  });
+};
 
 export default Footer;

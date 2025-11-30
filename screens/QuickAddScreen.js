@@ -2,24 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Platform, Alert, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../contexts/ThemeContext';
-import { useCurrency } from '../contexts/CurrencyContext';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, addDoc, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { useCustomAlert } from '../contexts/AlertContext';
+import FirebaseService from '../services/FirebaseService';
+import { 
+  validateTransaction, 
+  validateAmount, 
+  showValidationError 
+} from '../utils/ValidationUtils';
+import { CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const { width } = Dimensions.get('window');
 
-const CATEGORIES = [
-  { name: 'Food & Drink', icon: 'food', color: '#ef4444' },
-  { name: 'Shopping', icon: 'shopping', color: '#f59e0b' },
-  { name: 'Transport', icon: 'car', color: '#3b82f6' },
-  { name: 'Entertainment', icon: 'movie', color: '#8b5cf6' },
-  { name: 'Bills', icon: 'receipt', color: '#10b981' },
-  { name: 'Health', icon: 'heart-pulse', color: '#ec4899' },
-  { name: 'Income', icon: 'cash-plus', color: '#22c55e' },
-  { name: 'Other', icon: 'dots-horizontal', color: '#6b7280' },
-];
+// Convert centralized categories to QuickAddScreen format
+const QUICK_ADD_CATEGORIES = CATEGORIES.map(cat => ({
+  name: cat.name,
+  icon: cat.name === 'Income' ? 'cash-plus' : 
+        cat.name === 'Food & Drink' ? 'food' :
+        cat.name === 'Shopping' ? 'shopping' :
+        cat.name === 'Transport' ? 'car' :
+        cat.name === 'Entertainment' ? 'movie' :
+        cat.name === 'Bills' ? 'receipt' :
+        cat.name === 'Health' ? 'heart-pulse' :
+        cat.name === 'Groceries' ? 'cart' :
+        cat.name === 'Home' ? 'home' :
+        cat.name === 'Other' ? 'dots-horizontal' : 'help',
+  color: CATEGORY_COLORS[cat.name]
+}));
 
 export default function QuickAddScreen({ navigation, route }) {
   const { theme } = useTheme();
@@ -313,8 +324,8 @@ export default function QuickAddScreen({ navigation, route }) {
   });
 
   const filteredCategories = type === 'income' 
-    ? CATEGORIES.filter(c => c.name === 'Income')
-    : CATEGORIES.filter(c => c.name !== 'Income');
+    ? QUICK_ADD_CATEGORIES.filter(c => c.name === 'Income')
+    : QUICK_ADD_CATEGORIES.filter(c => c.name !== 'Income');
 
   return (
     <View style={styles.container}>
@@ -422,9 +433,9 @@ onPress={() => setCategory(cat.name)}
                 onPress={() => handleQuickRepeat(transaction)}
               >
                 <Icon 
-                  name={CATEGORIES.find(c => c.name === transaction.category)?.icon || 'cash'} 
+                  name={QUICK_ADD_CATEGORIES.find(c => c.name === transaction.category)?.icon || 'cash'} 
                   size={24} 
-                  color={CATEGORIES.find(c => c.name === transaction.category)?.color || theme.primary}
+                  color={CATEGORY_COLORS[transaction.category] || theme.primary}
                 />
                 <View style={styles.recentText}>
                   <Text style={styles.recentDescription}>

@@ -11,6 +11,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import FirebaseService from '../services/FirebaseService';
 import { storage } from '../config/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { safeGoBack } from '../utils/NavigationHelper';
+import { CATEGORY_NAMES, CATEGORY_MAP } from '../constants/categories';
 
 export default function StatementsScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -65,11 +67,10 @@ export default function StatementsScreen({ navigation, route }) {
   const [editDate, setEditDate] = useState('');
   
   // Category options for dropdown
-  const categoryOptions = [
-    'Shopping', 'Food & Dining', 'Transport', 'Entertainment',
-    'Bills & Utilities', 'Healthcare', 'Groceries', 'Travel',
-    'Education', 'Personal Care', 'Savings', 'Other'
-  ];
+  const categoryOptions = CATEGORY_NAMES;
+  
+  // Category mapping to handle different formats (with/without emojis)
+  const categoryMap = CATEGORY_MAP;
   
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -396,7 +397,15 @@ export default function StatementsScreen({ navigation, route }) {
     
     // Apply category filter
     if (filterCategory !== 'All') {
-      filtered = filtered.filter(t => t.category === filterCategory);
+      const matchingCategories = categoryMap[filterCategory] || [filterCategory];
+      filtered = filtered.filter(t => {
+        const transactionCategory = t.category || '';
+        return matchingCategories.some(cat => 
+          transactionCategory === cat || 
+          transactionCategory.includes(cat) ||
+          cat.includes(transactionCategory)
+        );
+      });
     }
     
     // Apply date range filter
@@ -1020,7 +1029,7 @@ export default function StatementsScreen({ navigation, route }) {
         <View style={styles.headerTop}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation, 'Dashboard')}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>

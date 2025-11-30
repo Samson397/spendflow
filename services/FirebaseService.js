@@ -50,6 +50,45 @@ class FirebaseService {
     }
   }
 
+  async getRecurringTransferRules(userId) {
+    try {
+      const refCol = collection(db, 'users', userId, 'recurringTransfers');
+      const querySnapshot = await getDocs(refCol);
+      const rules = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return { success: true, data: rules };
+    } catch (error) {
+      console.error('Error getting recurring transfer rules:', error);
+      return { success: false, error: error.message, data: [] };
+    }
+  }
+
+  async createRecurringTransferRule(userId, ruleData) {
+    return this.addRecurringTransfer(userId, ruleData);
+  }
+
+  async updateRecurringTransferRule(userId, ruleId, ruleData) {
+    return this.updateRecurringTransfer(userId, ruleId, ruleData);
+  }
+
+  async deleteRecurringTransferRule(userId, ruleId) {
+    return this.deleteRecurringTransfer(userId, ruleId);
+  }
+
+  async createOneTimeTransfer(userId, transferData) {
+    try {
+      const refCol = collection(db, 'users', userId, 'transfers');
+      const docRef = await addDoc(refCol, {
+        ...transferData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating one-time transfer:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   subscribeToRecurringTransfers(userId, callback) {
     const refCol = collection(db, 'users', userId, 'recurringTransfers');
     return onSnapshot(refCol, (snapshot) => {
@@ -132,20 +171,100 @@ class FirebaseService {
   async getUserCards(userId) {
     try {
       const cardsRef = collection(db, 'users', userId, 'cards');
-      const cardsSnap = await getDocs(cardsRef);
-      const cards = cardsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const querySnapshot = await getDocs(cardsRef);
+      const cards = [];
+      querySnapshot.forEach((doc) => {
+        cards.push({ id: doc.id, ...doc.data() });
+      });
       return { success: true, data: cards };
     } catch (error) {
       console.error('Error getting user cards:', error);
-      
-      // If permission denied, return empty array for development
-      if (error.code === 'permission-denied') {
-        return { success: true, data: [] };
+      return { success: false, data: [] };
+    }
+  }
+
+  async getUserCard(userId, cardId) {
+    try {
+      const cardRef = doc(db, 'users', userId, 'cards', cardId);
+      const cardDoc = await getDoc(cardRef);
+      if (cardDoc.exists()) {
+        return { success: true, data: { id: cardDoc.id, ...cardDoc.data() } };
       }
+      return { success: false, error: 'Card not found' };
+    } catch (error) {
+      console.error('Error getting user card:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async processCardTransfer(userId, cardId, amount, description, type = 'transfer') {
+    try {
+      // Get the card
+      const cardResult = await this.getUserCard(userId, cardId);
+      if (!cardResult.success) {
+        return { success: false, error: 'Card not found' };
+      }
+
+      const card = cardResult.data;
       
+      // Check balance
+      if (card.balance < amount) {
+        return { success: false, error: 'Insufficient balance' };
+      }
+
+      // Update card balance
+      const newBalance = card.balance - amount;
+      await this.updateUserCard(userId, cardId, { balance: newBalance });
+
+      // Create transaction record
+      const transactionData = {
+        userId,
+        amount: -amount, // Negative for outgoing
+        type: type === 'payment_request' ? 'payment' : 'transfer',
+        category: 'Transfers',
+        description,
+        cardId,
+        date: new Date().toISOString(),
+        balance: newBalance
+      };
+
+      const transactionResult = await this.createTransaction(transactionData);
+
+      return { 
+        success: true, 
+        transactionId: transactionResult.id,
+        newBalance 
+      };
+    } catch (error) {
+      console.error('Process card transfer error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateUserCard(userId, cardId, updateData) {
+    try {
+      const cardRef = doc(db, 'users', userId, 'cards', cardId);
+      await updateDoc(cardRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating user card:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async createTransaction(transactionData) {
+    try {
+      const transactionsRef = collection(db, 'users', transactionData.userId, 'transactions');
+      const docRef = await addDoc(transactionsRef, {
+        ...transactionData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating transaction:', error);
       return { success: false, error: error.message };
     }
   }
@@ -314,33 +433,177 @@ class FirebaseService {
     }
   }
 
-  // Get card transactions
+  // Get card transactions with enhanced error handling and logging
   async getCardTransactions(userId, cardId) {
     try {
+      if (!userId || !cardId) {
+        console.error('Missing required parameters:', { userId, cardId });
+        return { success: false, error: 'Missing required parameters' };
+      }
+
+      // Ensure cardId is a string for consistent comparison
+      const normalizedCardId = String(cardId);
+      const numericCardId = isNaN(Number(normalizedCardId)) ? null : Number(normalizedCardId);
+      
+      console.log(`[FirebaseService] Fetching transactions for user: ${userId}, card: ${normalizedCardId}`);
+      
       const transactionsRef = collection(db, 'users', userId, 'transactions');
-      const q = query(
-        transactionsRef,
-        where('cardId', '==', cardId),
-        orderBy('date', 'desc')
+      
+      // Create multiple queries like in subscribeToCardTransactions
+      const queries = [
+        query(
+          transactionsRef,
+          where('cardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
+      ];
+      
+      // Add query for fromCardId (transfers out)
+      queries.push(
+        query(
+          transactionsRef,
+          where('fromCardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
       );
       
-      const querySnapshot = await getDocs(q);
-      const transactions = [];
-      querySnapshot.forEach((doc) => {
-        transactions.push({
-          id: doc.id,
-          ...doc.data()
+      // Add query for toCardId (transfers in)
+      queries.push(
+        query(
+          transactionsRef,
+          where('toCardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
+      );
+      
+      // Add numeric versions if different
+      if (numericCardId !== null && String(numericCardId) !== normalizedCardId) {
+        queries.push(
+          query(
+            transactionsRef,
+            where('cardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+        queries.push(
+          query(
+            transactionsRef,
+            where('fromCardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+        queries.push(
+          query(
+            transactionsRef,
+            where('toCardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+      }
+      
+      console.log(`[FirebaseService] Executing ${queries.length} Firestore queries for card transactions`);
+      
+      // Execute all queries
+      const allTransactions = new Map();
+      let totalDocs = 0;
+      
+      for (let i = 0; i < queries.length; i++) {
+        const querySnapshot = await getDocs(queries[i]);
+        console.log(`[FirebaseService] Query ${i} returned ${querySnapshot.docs.length} documents`);
+        
+        querySnapshot.forEach((doc) => {
+          try {
+            const data = doc.data();
+            
+            // Normalize amount
+            let amount = '£0.00';
+            // Check for both "amount" and "amout" (typo in database)
+            const amountValue = data.amount || data.amout;
+            if (amountValue) {
+              if (typeof amountValue === 'string') {
+                // If it's already a string with a currency symbol, use it as is
+                if (/^[£$€]/.test(amountValue)) {
+                  amount = amountValue;
+                } else {
+                  // Otherwise, try to parse it as a number
+                  const numAmount = parseFloat(amountValue);
+                  amount = isNaN(numAmount) ? '£0.00' : 
+                          (data.type === 'income' || (amountValue + '').startsWith('+') ? '+' : '-') + 
+                          '£' + Math.abs(numAmount).toFixed(2);
+                }
+              } else if (typeof amountValue === 'number') {
+                // Handle numeric amounts
+                const isPositive = (data.type === 'income' || amountValue < 0);
+                amount = (isPositive ? '+' : '-') + '£' + Math.abs(amountValue).toFixed(2);
+              }
+            }
+            
+            // Normalize the transaction data
+            const transaction = {
+              id: doc.id,
+              ...data,
+              // Ensure the amount field is set (handle typo in database)
+              amount: amount,
+              amout: amount, // Keep both for compatibility
+              // Ensure cardId is always a string and matches our normalized ID
+              cardId: data.cardId ? String(data.cardId) : 
+                     (data.fromCardId === normalizedCardId ? normalizedCardId :
+                      data.toCardId === normalizedCardId ? normalizedCardId :
+                      normalizedCardId),
+              // Ensure dates are properly formatted
+              date: data.date ? new Date(data.date).toISOString() : 
+                    (data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString()),
+              type: data.type || (amount.startsWith('+') ? 'income' : 'expense'),
+              createdAt: data.createdAt || new Date().toISOString()
+            };
+            
+            allTransactions.set(doc.id, transaction);
+            totalDocs++;
+          } catch (error) {
+            console.error(`[FirebaseService] Error processing document ${doc.id}:`, error);
+          }
         });
+      }
+      
+      console.log(`[FirebaseService] Processed ${totalDocs} total documents, found ${allTransactions.size} unique transactions`);
+      
+      // Convert to array and sort by date
+      const transactions = Array.from(allTransactions.values()).sort((a, b) => {
+        try {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          return dateB - dateA; // Newest first
+        } catch (error) {
+          return 0;
+        }
       });
       
       return { success: true, data: transactions };
     } catch (error) {
-      console.error('Error getting card transactions:', error);
+      console.error('[FirebaseService] Error getting card transactions:', error);
       return { success: false, error: error.message };
     }
   }
 
-  
+  async updateCard(userId, cardId, updateData) {
+    try {
+      if (!userId || !cardId) {
+        console.error('Missing required parameters:', { userId, cardId });
+        return { success: false, error: 'Missing required parameters' };
+      }
+
+      const cardRef = doc(db, 'users', userId, 'cards', cardId);
+      await updateDoc(cardRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating card:', error);
+      return { success: false, error: error.message };
+    }
+  }
 
   // Savings Accounts Operations
   async addSavingsAccount(userId, accountData) {
@@ -703,20 +966,231 @@ class FirebaseService {
   }
 
   subscribeToCardTransactions(userId, cardId, callback) {
+    if (!userId || !cardId) {
+      return () => {};
+    }
+    
     try {
+      // Check if db is initialized
+      if (!db) {
+        return () => {};
+      }
+      
+      // Normalize cardId to string and create a numeric version
+      const normalizedCardId = String(cardId).trim();
+      const numericCardId = isNaN(Number(normalizedCardId)) ? null : Number(normalizedCardId);
+      
       const transactionsRef = collection(db, 'users', userId, 'transactions');
-      const q = query(transactionsRef, where('cardId', '==', cardId));
-      return onSnapshot(q, (snapshot) => {
-        const transactions = snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
-        callback(transactions);
-      }, (error) => {
-        console.error('Error subscribing to card transactions:', error);
-        callback([]);
+      
+      // Create a query that checks for both string and numeric cardIds
+      // Also check for transfers where this card is the source or destination
+      const queries = [
+        query(
+          transactionsRef,
+          where('cardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
+      ];
+      
+      // Add query for fromCardId (transfers out)
+      queries.push(
+        query(
+          transactionsRef,
+          where('fromCardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
+      );
+      
+      // Add query for toCardId (transfers in)
+      queries.push(
+        query(
+          transactionsRef,
+          where('toCardId', '==', normalizedCardId),
+          orderBy('date', 'desc')
+        )
+      );
+      
+      // Add numeric versions if different
+      if (numericCardId !== null && String(numericCardId) !== normalizedCardId) {
+        queries.push(
+          query(
+            transactionsRef,
+            where('cardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+        queries.push(
+          query(
+            transactionsRef,
+            where('fromCardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+        queries.push(
+          query(
+            transactionsRef,
+            where('toCardId', '==', numericCardId),
+            orderBy('date', 'desc')
+          )
+        );
+      }
+      
+      // Set up the snapshot listeners with enhanced error handling
+      let isUnsubscribed = false;
+      const allTransactions = new Map(); // Use a Map to deduplicate by transaction ID
+      
+      // Function to process snapshot and update transactions
+      const processSnapshot = (snapshot, queryType) => {
+        if (isUnsubscribed) {
+          return;
+        }
+          
+        try {
+          if (!snapshot || !snapshot.docs) {
+            return;
+          }
+          
+          // Process each document in the snapshot
+          snapshot.forEach((doc) => {
+              try {
+                if (!doc.exists()) {
+                  return;
+                }
+                
+                const data = doc.data();
+                if (!data) {
+                  return;
+                }
+                
+                // Skip if we've already processed this document
+                if (allTransactions.has(doc.id)) {
+                  return;
+                }
+            
+            // Parse the amount to ensure it's in the correct format
+            let amount = '£0.00';
+            // Check for both "amount" and "amout" (typo in database)
+            const amountValue = data.amount || data.amout;
+            if (amountValue) {
+              if (typeof amountValue === 'string') {
+                // If it's already a string with a currency symbol, use it as is
+                if (/[-+]?[£$€]/.test(amountValue)) {
+                  amount = amountValue;
+                } else {
+                  // Otherwise, try to parse it as a number
+                  const numAmount = parseFloat(amountValue);
+                  amount = isNaN(numAmount) ? '£0.00' : 
+                          (data.type === 'income' || (amountValue + '').startsWith('+') ? '+' : '-') + 
+                          '£' + Math.abs(numAmount).toFixed(2);
+                }
+              } else if (typeof amountValue === 'number') {
+                // Handle numeric amounts
+                const isPositive = (data.type === 'income' || amountValue < 0);
+                amount = (isPositive ? '+' : '-') + '£' + Math.abs(amountValue).toFixed(2);
+              }
+            }
+            
+            // Normalize the transaction data
+            const transaction = {
+              id: doc.id,
+              ...data,
+              // Ensure the amount field is set (handle typo in database)
+              amount: amount,
+              amout: amount, // Keep both for compatibility
+              // Ensure cardId is always a string and matches our normalized ID
+              // For transfers, check if this card is involved
+              cardId: data.cardId ? String(data.cardId) : 
+                     (data.fromCardId === normalizedCardId ? normalizedCardId :
+                      data.toCardId === normalizedCardId ? normalizedCardId :
+                      normalizedCardId),
+              // Ensure dates are properly formatted
+              date: data.date ? new Date(data.date).toISOString() : 
+                    (data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString()),
+              // Ensure type is set
+              type: data.type || (amount.startsWith('+') ? 'income' : 'expense'),
+              // Add timestamp if missing
+              createdAt: data.createdAt || new Date().toISOString(),
+              // Ensure we have a description
+              description: data.description || 'Transaction',
+              // Ensure we have a category
+              category: data.category || (data.type === 'income' ? 'Income' : 'Expense')
+            };
+                
+            // Add to our transactions map (automatically deduplicates by ID)
+            allTransactions.set(doc.id, transaction);
+          } catch (docError) {
+            // Error processing document, continue with others
+          }
+          });
+          
+          // Convert map values to array and sort by date (newest first)
+          const sortedTransactions = Array.from(allTransactions.values()).sort((a, b) => {
+            const dateA = new Date(a.date || 0).getTime();
+            const dateB = new Date(b.date || 0).getTime();
+            return dateB - dateA;
+          });
+          
+          // Send updates to the callback if not unsubscribed
+          if (!isUnsubscribed) {
+            try {
+              callback(sortedTransactions);
+            } catch (callbackError) {
+              // Error in callback execution
+            }
+          }
+        } catch (error) {
+          // Error in snapshot handler, send current transactions if available
+          if (!isUnsubscribed) {
+            try {
+              const currentTransactions = Array.from(allTransactions.values());
+              callback(currentTransactions);
+            } catch (callbackError) {
+              // Error in error callback
+            }
+          }
+        }
+      };
+      
+      // Create a function to handle errors for individual queries
+      const handleError = (error, queryType) => {
+        // Error in subscription, continue with other queries
+      };
+      
+      // Set up listeners for all queries
+      const unsubscribes = queries.map((q, index) => {
+        const queryType = index === 0 ? 'primary' : `secondary-${index}`;
+        return onSnapshot(
+          q,
+          (snapshot) => {
+            processSnapshot(snapshot, queryType);
+          },
+          (error) => {
+            handleError(error, queryType);
+          }
+        );
       });
+
+      // Return a function to clean up all listeners
+      return () => {
+        if (!isUnsubscribed) {
+          isUnsubscribed = true;
+          
+          // Call all unsubscribe functions
+          unsubscribes.forEach((unsubscribe, index) => {
+            try {
+              unsubscribe();
+            } catch (unsubError) {
+              // Error unsubscribing, continue
+            }
+          });
+          
+          // Clear the transactions map
+          allTransactions.clear();
+        }
+      };
+      
     } catch (error) {
-      console.error('Error setting up card transactions subscription:', error);
+      // Error setting up subscription, return no-op function
       return () => {};
     }
   }
@@ -744,7 +1218,6 @@ class FirebaseService {
         id: doc.id,
         ...doc.data()
       }));
-      console.log('Firebase subscription returned debits:', debits.length);
       callback(debits);
     }, (error) => {
       console.error('Firebase subscription error:', error);
@@ -1230,7 +1703,8 @@ class FirebaseService {
 
   async markNotificationAsRead(userId, notificationId) {
     try {
-      const notificationRef = doc(db, 'users', userId, 'notifications', notificationId);
+      // Use the global notifications collection to match where notifications are stored
+      const notificationRef = doc(db, 'notifications', notificationId);
       await updateDoc(notificationRef, {
         read: true,
         readAt: serverTimestamp()
@@ -1289,25 +1763,7 @@ class FirebaseService {
     }
   }
 
-  subscribeToNotifications(userId, callback) {
-    try {
-      const notificationsRef = collection(db, 'users', userId, 'notifications');
-      const q = query(notificationsRef, orderBy('createdAt', 'desc'), limit(50));
-      
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const notifications = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
-        }));
-        callback(notifications);
-      });
-      return unsubscribe;
-    } catch (error) {
-      console.error('Error subscribing to notifications:', error);
-      return () => {};
-    }
-  }
+  // Remove duplicate function - keeping the one that subscribes to global notifications collection
 
   // Admin Methods
   static async getAdminUserStats() {
@@ -2172,6 +2628,807 @@ class FirebaseService {
   }
 
   // Add more admin methods as needed
+
+  // ========== SOCIAL FINANCE METHODS ==========
+  
+  // User Search Operations
+  async searchUsersByEmail(email) {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', email.toLowerCase()));
+      const querySnapshot = await getDocs(q);
+      const users = [];
+      querySnapshot.forEach((doc) => {
+        users.push({ id: doc.id, ...doc.data() });
+      });
+      return users;
+    } catch (error) {
+      console.error('Error searching users by email:', error);
+      return [];
+    }
+  }
+
+  async searchUsers(query) {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, 
+        where('email', '>=', query.toLowerCase()),
+        where('email', '<=', query.toLowerCase() + '\uf8ff')
+      );
+      const querySnapshot = await getDocs(q);
+      const users = [];
+      querySnapshot.forEach((doc) => {
+        users.push({ id: doc.id, ...doc.data() });
+      });
+      return users;
+    } catch (error) {
+      console.error('Error searching users:', error);
+      return [];
+    }
+  }
+
+  async getUserDetails(userId) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        return { id: userDoc.id, ...userDoc.data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting user details:', error);
+      return null;
+    }
+  }
+
+  // Connection Operations
+  async createConnectionRequest(requestData) {
+    try {
+      const requestsRef = collection(db, 'connectionRequests');
+      const docRef = await addDoc(requestsRef, {
+        ...requestData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating connection request:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateConnectionRequest(requestId, updateData) {
+    try {
+      const requestRef = doc(db, 'connectionRequests', requestId);
+      await updateDoc(requestRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating connection request:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getPendingConnectionRequests(userId) {
+    try {
+      const requestsRef = collection(db, 'connectionRequests');
+      const q = query(requestsRef, 
+        where('toUserId', '==', userId),
+        where('status', '==', 'pending'),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const requests = [];
+      querySnapshot.forEach((doc) => {
+        requests.push({ id: doc.id, ...doc.data() });
+      });
+      return requests;
+    } catch (error) {
+      console.error('Error getting pending connection requests:', error);
+      return [];
+    }
+  }
+
+  async checkExistingConnection(userId1, userId2) {
+    try {
+      const connectionsRef = collection(db, 'connections');
+      const q = query(connectionsRef, 
+        where('userId1', 'in', [userId1, userId2]),
+        where('userId2', 'in', [userId1, userId2])
+      );
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        return { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error checking existing connection:', error);
+      return null;
+    }
+  }
+
+  async createConnection(connectionData) {
+    try {
+      const connectionsRef = collection(db, 'connections');
+      const docRef = await addDoc(connectionsRef, {
+        ...connectionData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating connection:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getUserConnections(userId) {
+    try {
+      const connectionsRef = collection(db, 'connections');
+      const q = query(connectionsRef, 
+        where('userId1', '==', userId),
+        where('status', '==', 'active')
+      );
+      const querySnapshot = await getDocs(q);
+      const connections = [];
+      querySnapshot.forEach((doc) => {
+        connections.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Also check where user is userId2
+      const q2 = query(connectionsRef, 
+        where('userId2', '==', userId),
+        where('status', '==', 'active')
+      );
+      const querySnapshot2 = await getDocs(q2);
+      querySnapshot2.forEach((doc) => {
+        connections.push({ id: doc.id, ...doc.data() });
+      });
+
+      return connections;
+    } catch (error) {
+      console.error('Error getting user connections:', error);
+      return [];
+    }
+  }
+
+  async removeConnection(userId1, userId2) {
+    try {
+      const connectionsRef = collection(db, 'connections');
+      const q = query(connectionsRef, 
+        where('userId1', 'in', [userId1, userId2]),
+        where('userId2', 'in', [userId1, userId2])
+      );
+      const querySnapshot = await getDocs(q);
+      const batch = writeBatch(db);
+      querySnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      return { success: true };
+    } catch (error) {
+      console.error('Error removing connection:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async blockUser(userId, blockedUserId) {
+    try {
+      const blocksRef = collection(db, 'userBlocks');
+      await addDoc(blocksRef, {
+        userId,
+        blockedUserId,
+        createdAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error blocking user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Payment Request Operations
+  async createPaymentRequest(requestData) {
+    try {
+      const requestsRef = collection(db, 'paymentRequests');
+      const docRef = await addDoc(requestsRef, {
+        ...requestData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating payment request:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getPaymentRequest(requestId) {
+    try {
+      const requestRef = doc(db, 'paymentRequests', requestId);
+      const requestDoc = await getDoc(requestRef);
+      if (requestDoc.exists()) {
+        return { id: requestDoc.id, ...requestDoc.data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting payment request:', error);
+      return null;
+    }
+  }
+
+  async updatePaymentRequest(requestId, updateData) {
+    try {
+      const requestRef = doc(db, 'paymentRequests', requestId);
+      await updateDoc(requestRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating payment request:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getSentPaymentRequests(userId) {
+    try {
+      const requestsRef = collection(db, 'paymentRequests');
+      const q = query(requestsRef, 
+        where('fromUserId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const requests = [];
+      querySnapshot.forEach((doc) => {
+        requests.push({ id: doc.id, ...doc.data() });
+      });
+      return requests;
+    } catch (error) {
+      console.error('Error getting sent payment requests:', error);
+      return [];
+    }
+  }
+
+  async getReceivedPaymentRequests(userId) {
+    try {
+      const requestsRef = collection(db, 'paymentRequests');
+      const q = query(requestsRef, 
+        where('toUserId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const requests = [];
+      querySnapshot.forEach((doc) => {
+        requests.push({ id: doc.id, ...doc.data() });
+      });
+      return requests;
+    } catch (error) {
+      console.error('Error getting received payment requests:', error);
+      return [];
+    }
+  }
+
+  // Split Bill Operations
+  async createSplitBillRequest(splitData) {
+    try {
+      const splitBillsRef = collection(db, 'splitBills');
+      const docRef = await addDoc(splitBillsRef, {
+        ...splitData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating split bill request:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getUserSplitBills(userId) {
+    try {
+      const splitBillsRef = collection(db, 'splitBills');
+      
+      // Get split bills where user is organizer
+      const organizerQuery = query(splitBillsRef, 
+        where('organizerId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      
+      // Get split bills where user is a participant
+      const participantQuery = query(splitBillsRef, 
+        where('participants', 'array-contains', { userId }),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const [organizerSnapshot, participantSnapshot] = await Promise.all([
+        getDocs(organizerQuery),
+        getDocs(participantQuery)
+      ]);
+      
+      const splitBills = [];
+      const seenIds = new Set();
+      
+      // Add organizer split bills
+      organizerSnapshot.forEach((doc) => {
+        if (!seenIds.has(doc.id)) {
+          splitBills.push({ id: doc.id, ...doc.data() });
+          seenIds.add(doc.id);
+        }
+      });
+      
+      // Add participant split bills
+      participantSnapshot.forEach((doc) => {
+        if (!seenIds.has(doc.id)) {
+          splitBills.push({ id: doc.id, ...doc.data() });
+          seenIds.add(doc.id);
+        }
+      });
+      
+      return { success: true, data: splitBills };
+    } catch (error) {
+      console.error('Error getting user split bills:', error);
+      return { success: false, data: [] };
+    }
+  }
+
+  async updateSplitBill(splitBillId, updateData) {
+    try {
+      const splitBillRef = doc(db, 'splitBills', splitBillId);
+      await updateDoc(splitBillRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating split bill:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateSplitBillParticipant(splitBillId, userId, updateData) {
+    try {
+      const splitBillRef = doc(db, 'splitBills', splitBillId);
+      const splitBillDoc = await getDoc(splitBillRef);
+      if (splitBillDoc.exists()) {
+        const splitBill = splitBillDoc.data();
+        const updatedParticipants = splitBill.participants.map(p => 
+          p.userId === userId ? { ...p, ...updateData } : p
+        );
+        await updateDoc(splitBillRef, {
+          participants: updatedParticipants,
+          updatedAt: serverTimestamp()
+        });
+        return { success: true };
+      }
+      return { success: false, error: 'Split bill not found' };
+    } catch (error) {
+      console.error('Error updating split bill participant:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Smart Transfer Operations
+  async createSmartTransferMatch(matchData) {
+    try {
+      const matchesRef = collection(db, 'smartTransferMatches');
+      const docRef = await addDoc(matchesRef, {
+        ...matchData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating smart transfer match:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getSmartTransferMatch(matchId) {
+    try {
+      const matchRef = doc(db, 'smartTransferMatches', matchId);
+      const matchDoc = await getDoc(matchRef);
+      if (matchDoc.exists()) {
+        return { id: matchDoc.id, ...matchDoc.data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting smart transfer match:', error);
+      return null;
+    }
+  }
+
+  async updateSmartTransferMatch(matchId, updateData) {
+    try {
+      const matchRef = doc(db, 'smartTransferMatches', matchId);
+      await updateDoc(matchRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating smart transfer match:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async checkExistingSmartTransferMatch(transferId, depositId) {
+    try {
+      const matchesRef = collection(db, 'smartTransferMatches');
+      const q = query(matchesRef, 
+        where('transferTransactionId', '==', transferId),
+        where('depositTransactionId', '==', depositId)
+      );
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        return { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error checking existing smart transfer match:', error);
+      return null;
+    }
+  }
+
+  async getUserSmartTransferMatches(userId) {
+    try {
+      const matchesRef = collection(db, 'smartTransferMatches');
+      const q = query(matchesRef, 
+        where('transferUserId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const matches = [];
+      querySnapshot.forEach((doc) => {
+        matches.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Also check where user is depositUserId
+      const q2 = query(matchesRef, 
+        where('depositUserId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot2 = await getDocs(q2);
+      querySnapshot2.forEach((doc) => {
+        matches.push({ id: doc.id, ...doc.data() });
+      });
+
+      return matches;
+    } catch (error) {
+      console.error('Error getting user smart transfer matches:', error);
+      return [];
+    }
+  }
+
+  // Notification Operations
+  async createNotification(notificationData) {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      const docRef = await addDoc(notificationsRef, {
+        ...notificationData,
+        createdAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getUserNotifications(userId, limitCount = 50, unreadOnly = false) {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      let q = query(notificationsRef, 
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc'),
+        limit(limitCount)
+      );
+      
+      if (unreadOnly) {
+        q = query(notificationsRef, 
+          where('userId', '==', userId),
+          where('read', '==', false),
+          orderBy('createdAt', 'desc'),
+          limit(limitCount)
+        );
+      }
+      
+      const querySnapshot = await getDocs(q);
+      const notifications = [];
+      querySnapshot.forEach((doc) => {
+        notifications.push({ id: doc.id, ...doc.data() });
+      });
+      return notifications;
+    } catch (error) {
+      console.error('Error getting user notifications:', error);
+      return [];
+    }
+  }
+
+  async updateNotification(notificationId, updateData) {
+    try {
+      const notificationRef = doc(db, 'notifications', notificationId);
+      
+      // Check if document exists before updating
+      const notificationDoc = await getDoc(notificationRef);
+      if (!notificationDoc.exists()) {
+        console.warn('Notification document does not exist:', notificationId);
+        return { success: false, error: 'Notification not found' };
+      }
+      
+      await updateDoc(notificationRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async deleteNotification(notificationId, userId) {
+    try {
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await deleteDoc(notificationRef);
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async markAllNotificationsAsRead(userId) {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(notificationsRef, 
+        where('userId', '==', userId),
+        where('read', '==', false)
+      );
+      const querySnapshot = await getDocs(q);
+      const batch = writeBatch(db);
+      querySnapshot.forEach((doc) => {
+        batch.update(doc.ref, { 
+          read: true, 
+          readAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      });
+      await batch.commit();
+      return { success: true };
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getUnreadNotificationCount(userId) {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(notificationsRef, 
+        where('userId', '==', userId),
+        where('read', '==', false)
+      );
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.size;
+    } catch (error) {
+      console.error('Error getting unread notification count:', error);
+      return 0;
+    }
+  }
+
+  // Notification Preferences
+  async createNotificationPreferences(userId, preferences) {
+    try {
+      const prefsRef = doc(db, 'notificationPreferences', userId);
+      await setDoc(prefsRef, {
+        ...preferences,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating notification preferences:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getNotificationPreferences(userId) {
+    try {
+      const prefsRef = doc(db, 'notificationPreferences', userId);
+      const prefsDoc = await getDoc(prefsRef);
+      if (prefsDoc.exists()) {
+        return prefsDoc.data();
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting notification preferences:', error);
+      return null;
+    }
+  }
+
+  async updateNotificationPreferences(userId, preferences) {
+    try {
+      const prefsRef = doc(db, 'notificationPreferences', userId);
+      await updateDoc(prefsRef, {
+        ...preferences,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating notification preferences:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Connection Settings
+  async updateConnectionSettings(userId, connectionUserId, settings) {
+    try {
+      const settingsRef = doc(db, 'connectionSettings', `${userId}_${connectionUserId}`);
+      await setDoc(settingsRef, {
+        ...settings,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating connection settings:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Transaction Operations for Smart Transfers
+  async getTransaction(transactionId) {
+    try {
+      const transactionRef = doc(db, 'transactions', transactionId);
+      const transactionDoc = await getDoc(transactionRef);
+      if (transactionDoc.exists()) {
+        return { id: transactionDoc.id, ...transactionDoc.data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting transaction:', error);
+      return null;
+    }
+  }
+
+  async updateTransaction(transactionId, updateData) {
+    try {
+      const transactionRef = doc(db, 'transactions', transactionId);
+      await updateDoc(transactionRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getRecentTransactions(hours = 24) {
+    try {
+      const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(transactionsRef, 
+        where('date', '>=', cutoffTime.toISOString()),
+        orderBy('date', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const transactions = [];
+      querySnapshot.forEach((doc) => {
+        transactions.push({ id: doc.id, ...doc.data() });
+      });
+      return transactions;
+    } catch (error) {
+      console.error('Error getting recent transactions:', error);
+      return [];
+    }
+  }
+
+  // ========== MISSING METHODS FOR EXISTING FEATURES ==========
+  
+  // Chart subscription methods
+  subscribeToUserDashboardCharts(userId, callback) {
+    try {
+      const chartsRef = collection(db, 'users', userId, 'dashboardCharts');
+      const q = query(chartsRef, orderBy('createdAt', 'desc'));
+      
+      return onSnapshot(q, (querySnapshot) => {
+        const charts = [];
+        querySnapshot.forEach((doc) => {
+          charts.push({ id: doc.id, ...doc.data() });
+        });
+        callback(charts);
+      }, (error) => {
+        console.error('Error subscribing to dashboard charts:', error);
+        callback([]);
+      });
+    } catch (error) {
+      console.error('Error setting up dashboard charts subscription:', error);
+      return () => {}; // Return empty unsubscribe function
+    }
+  }
+
+  // Notification subscription methods
+  subscribeToNotifications(userId, callback) {
+    try {
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(notificationsRef, 
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      return onSnapshot(q, (querySnapshot) => {
+        const notifications = [];
+        querySnapshot.forEach((doc) => {
+          notifications.push({ id: doc.id, ...doc.data() });
+        });
+        callback(notifications);
+      }, (error) => {
+        console.error('Error subscribing to notifications:', error);
+        callback([]);
+      });
+    } catch (error) {
+      console.error('Error setting up notifications subscription:', error);
+      return () => {}; // Return empty unsubscribe function
+    }
+  }
+
+  // User dashboard charts methods
+  async addDashboardChart(userId, chartData) {
+    try {
+      const chartsRef = collection(db, 'users', userId, 'dashboardCharts');
+      const docRef = await addDoc(chartsRef, {
+        ...chartData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error adding dashboard chart:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateDashboardChart(userId, chartId, updateData) {
+    try {
+      const chartRef = doc(db, 'users', userId, 'dashboardCharts', chartId);
+      await updateDoc(chartRef, {
+        ...updateData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating dashboard chart:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async deleteDashboardChart(userId, chartId) {
+    try {
+      const chartRef = doc(db, 'users', userId, 'dashboardCharts', chartId);
+      await deleteDoc(chartRef);
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting dashboard chart:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getUserDashboardCharts(userId) {
+    try {
+      const chartsRef = collection(db, 'users', userId, 'dashboardCharts');
+      const q = query(chartsRef, orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const charts = [];
+      querySnapshot.forEach((doc) => {
+        charts.push({ id: doc.id, ...doc.data() });
+      });
+      return charts;
+    } catch (error) {
+      console.error('Error getting user dashboard charts:', error);
+      return [];
+    }
+  }
 }
 
 export default new FirebaseService();

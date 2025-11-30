@@ -1,15 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Modal, TextInput, ScrollView, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Modal, TextInput, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useCurrency } from '../contexts/CurrencyContext';
 import FirebaseService from '../services/FirebaseService';
-
-const CATEGORIES = [
-  'Food & Dining','Shopping','Transport','Entertainment','Bills & Utilities','Healthcare','Groceries','Travel','Education','Personal Care','Savings','Other'
-];
+import { CATEGORY_NAMES } from '../constants/categories';
 
 export default function BudgetScreen({ navigation }) {
   const { user } = useAuth();

@@ -101,14 +101,12 @@ export default function ProfileScreen({ navigation }) {
   const loadUserBadges = async () => {
     try {
       if (!user?.uid) {
-        console.log('No user ID available');
         return;
       }
 
       const result = await FirebaseService.getUserBadges(user.uid);
       if (result.success) {
         setUserBadges(result.data.earned);
-        console.log('Loaded badges from Firebase:', result.data.earned);
       } else {
         console.error('Failed to load badges:', result.error);
         // Fallback to mock data if Firebase fails
@@ -281,15 +279,12 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const handleSignOut = () => {
-    console.log('handleSignOut called');
     setShowSignOutModal(true);
   };
 
   const performSignOut = async () => {
-    console.log('performSignOut called');
     try {
       const result = await signOut();
-      console.log('signOut result:', result);
       
       if (result.success) {
         // Force clear browser storage on web to prevent auto sign-in
@@ -300,10 +295,9 @@ export default function ProfileScreen({ navigation }) {
             // Clear any Firebase persistence
             if (window.indexedDB) {
               const deleteReq = indexedDB.deleteDatabase('firebaseLocalStorageDb');
-              deleteReq.onsuccess = () => console.log('Firebase storage cleared');
+              deleteReq.onsuccess = () => {};
             }
           } catch (e) {
-            console.log('Storage clear error:', e);
           }
         }
       } else {
@@ -497,11 +491,11 @@ export default function ProfileScreen({ navigation }) {
 
           <TouchableOpacity 
             style={[styles.settingItem, { borderBottomColor: theme.background[0] }]}
-            onPress={() => setShowNotificationsModal(true)}
+            onPress={() => navigation.navigate('NotificationPreferences')}
           >
             <Text style={styles.settingIcon}>🔔</Text>
             <View style={styles.settingContent}>
-              <Text style={[styles.settingText, { color: theme.text }]}>Notifications</Text>
+              <Text style={[styles.settingText, { color: theme.text }]}>Notification Preferences</Text>
               <Text style={[styles.settingArrow, { color: theme.textSecondary }]}>›</Text>
             </View>
           </TouchableOpacity>

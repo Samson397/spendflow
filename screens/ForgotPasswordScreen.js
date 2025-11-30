@@ -2,22 +2,38 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import SEO from '../components/SEO';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const { resetPassword } = useAuth();
 
-  const handleResetPassword = () => {
-    if (!email) {
+  const handleResetPassword = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       Alert.alert('Error', 'Please enter your email address');
       return;
     }
     
-    setIsSubmitted(true);
+    const result = await resetPassword(trimmedEmail);
+    if (result.success) {
+      setIsSubmitted(true);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to send reset email');
+    }
   };
 
   return (
     <View style={styles.container}>
+      <SEO 
+        title="Reset Password - SpendFlow"
+        description="Reset your SpendFlow password securely by requesting a reset link to your email."
+        keywords="SpendFlow reset password, forgot password, recover account"
+        url="https://spendflow.uk/forgot-password"
+        noIndex={true}
+      />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <LinearGradient
           colors={['#667eea', '#764ba2']}
@@ -47,7 +63,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                   <TextInput
                     style={styles.input}
                     placeholder="you@example.com"
-                    placeholderTextColor="#a0aec0"
+                    placeholderTextColor="#6b7280"
                     value={email}
                     onChangeText={setEmail}
                     keyboardType="email-address"

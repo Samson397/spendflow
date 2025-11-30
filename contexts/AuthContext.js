@@ -8,8 +8,10 @@ import {
   updateProfile as firebaseUpdateProfile,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  deleteUser as firebaseDeleteUser
+  deleteUser as firebaseDeleteUser,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth } from '../config/firebase';
 import FirebaseService from '../services/FirebaseService';
 import AnalyticsService from '../services/AnalyticsService';
@@ -49,33 +51,35 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let authTimeout;
     
-    // Set a timeout to prevent infinite loading (reduced to 1 second for faster UX)
+    // Set a timeout to prevent infinite loading (reduced to 500ms for faster UX)
     authTimeout = setTimeout(() => {
-      console.log('Auth timeout - setting loading to false');
       setLoading(false);
       setUser(null);
-    }, 1000);
+    }, 500);
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       clearTimeout(authTimeout);
-      console.log('Auth state changed:', firebaseUser ? 'User signed in' : 'User signed out');
       
       if (firebaseUser) {
-        // User is signed in
+        // User is signed in - get custom claims for admin check
+        const idTokenResult = await firebaseUser.getIdTokenResult();
+        const isAdmin = idTokenResult.claims.admin === true;
+        
         const userData = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0],
           emailVerified: firebaseUser.emailVerified,
           photoURL: firebaseUser.photoURL,
-          createdAt: firebaseUser.metadata.creationTime
+          createdAt: firebaseUser.metadata.creationTime,
+          isAdmin: isAdmin
         };
         
         // Get additional user data from Firestore (with shorter timeout for faster login)
         try {
           const profileResult = await Promise.race([
             FirebaseService.getUserProfile(firebaseUser.uid),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1500)) // Reduced from 3000ms
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 800)) // Reduced from 1500ms
           ]);
           if (profileResult.success && profileResult.data) {
             userData.profile = profileResult.data;
@@ -96,16 +100,13 @@ export function AuthProvider({ children }) {
           }
         } catch (error) {
           // Profile fetch failed or timed out, continue without profile data
-          console.log('Profile fetch timeout - continuing with basic user data');
           // Set a default username to prevent issues
           userData.username = generateUsernameHelper(userData.name);
         }
         
-        console.log('Setting user data:', userData.email);
         setUser(userData);
       } else {
         // User is signed out
-        console.log('Setting user to null');
         setUser(null);
       }
       setLoading(false);
@@ -121,9 +122,12 @@ export function AuthProvider({ children }) {
     try {
       setLoading(true);
       
-      console.log(`Sign in attempt ${retryCount + 1} for:`, email);
-      console.log('Auth object:', auth);
-      console.log('Auth config:', auth?.config);
+      // Security: Remove sensitive console logs in production
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Sign in attempt ${retryCount + 1} for:`, email);
+      }
+      
+      // Don't log auth config - contains sensitive API keys
       
       if (!auth) {
         throw new Error('Firebase Auth not initialized');
@@ -141,8 +145,16 @@ export function AuthProvider({ children }) {
       
       return { success: true, user: { uid: firebaseUser.uid, email: firebaseUser.email } };
     } catch (error) {
-      console.error('Sign in error:', error);
+      console.error('Sign in error:', error.code || 'unknown', error.message || error);
       setLoading(false);
+      
+      // Send security alert for suspicious activity
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        // Don't wait for email to send, just fire and forget
+        EmailService.sendSecurityAlert(email, 'Failed Login Attempt', 
+          `Someone tried to sign in to your SpendFlow account with the wrong password or non-existent email.\n\nEmail: ${email}\nTime: ${new Date().toLocaleString()}\n\nIf this wasn't you, please secure your account immediately.`
+        ).catch(emailError => console.log('Failed to send security alert:', emailError));
+      }
       
       // Handle network errors with retry logic
       if (error.code === 'auth/network-request-failed' && retryCount < 2) {
@@ -387,14 +399,95 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // Admin management functions
+  const setAdminClaim = async (uid) => {
+    try {
+      const functions = getFunctions();
+      const setAdminClaimFunction = httpsCallable(functions, 'setAdminClaim');
+      const result = await setAdminClaimFunction({ uid });
+      return { success: true, data: result.data };
+    } catch (error) {
+      console.error('Error setting admin claim:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  const removeAdminClaim = async (uid) => {
+    try {
+      const functions = getFunctions();
+      const removeAdminClaimFunction = httpsCallable(functions, 'removeAdminClaim');
+      const result = await removeAdminClaimFunction({ uid });
+      return { success: true, data: result.data };
+    } catch (error) {
+      console.error('Error removing admin claim:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  const resetPassword = async (email) => {
+    try {
+      if (!email) {
+        return { success: false, error: 'Email is required' };
+      }
+      
+      setLoading(true);
+      await sendPasswordResetEmail(auth, email);
+      
+      // Track password reset request
+      try {
+        AnalyticsService.trackEvent('password_reset_requested', { method: 'email' });
+      } catch (analyticsError) {
+        console.log('Analytics tracking failed:', analyticsError);
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      
+      // Track the error
+      try {
+        AnalyticsService.trackError('password_reset_error', error.code);
+      } catch (analyticsError) {
+        console.log('Error tracking failed:', analyticsError);
+      }
+      
+      let errorMessage = 'Failed to send password reset email';
+      
+      switch (error.code) {
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/user-not-found':
+          // Don't reveal that the email doesn't exist for security reasons
+          console.log('User not found for password reset, but showing generic success');
+          return { success: true };
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many attempts. Please try again later';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || errorMessage;
+      }
+      
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const value = {
     user,
     loading,
-    signIn,
     signUp,
+    signIn,
     signOut,
     updateProfile,
-    deleteAccount
+    deleteAccount,
+    resetPassword,
+    setAdminClaim,
+    removeAdminClaim
   };
 
   return (

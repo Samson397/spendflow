@@ -1,4 +1,5 @@
 import FirebaseService from './FirebaseService';
+import EmailService from './EmailService';
 
 class DirectDebitService {
   
@@ -410,6 +411,62 @@ class DirectDebitService {
       
     } catch (error) {
       console.error('Error simulating direct debit processing:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Send payment reminders for upcoming direct debits
+  static async sendPaymentReminders(userId) {
+    try {
+      const today = new Date();
+      const reminderDays = [3, 7]; // Send reminders 3 days and 7 days before due date
+      
+      // Get all active direct debits for the user
+      const directDebitsResult = await FirebaseService.getUserDirectDebits(userId);
+      if (!directDebitsResult.success) {
+        return { success: false, error: 'Failed to fetch direct debits' };
+      }
+      
+      const activeDebits = directDebitsResult.data.filter(dd => dd.status === 'Active');
+      const userResult = await FirebaseService.getUserProfile(userId);
+      
+      if (!userResult.success || !userResult.data?.email) {
+        return { success: false, error: 'User email not found' };
+      }
+      
+      const userEmail = userResult.data.email;
+      const remindersSent = [];
+      
+      for (const debit of activeDebits) {
+        const dueDate = new Date(debit.nextPaymentDate);
+        const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+        
+        // Check if we should send a reminder
+        if (reminderDays.includes(daysUntilDue)) {
+          const paymentData = {
+            cardName: debit.name || 'Direct Debit',
+            amount: debit.amount,
+            dueDate: debit.nextPaymentDate,
+            minimumPayment: debit.minimumPayment || debit.amount
+          };
+          
+          try {
+            await EmailService.sendPaymentReminder(userEmail, paymentData);
+            remindersSent.push({
+              debitName: debit.name,
+              daysUntilDue,
+              amount: debit.amount
+            });
+          } catch (emailError) {
+            console.error('Failed to send payment reminder:', emailError);
+          }
+        }
+      }
+      
+      return { success: true, remindersSent };
+      
+    } catch (error) {
+      console.error('Error sending payment reminders:', error);
       return { success: false, error: error.message };
     }
   }

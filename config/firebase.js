@@ -7,25 +7,42 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Firebase configuration - using custom domain for production
+const getEnv = (key, fallback = '') => {
+  const normalizedKeys = [
+    `EXPO_PUBLIC_${key}`,
+    `NEXT_PUBLIC_${key}`,
+    `REACT_APP_${key}`,
+    key
+  ];
+
+  for (const normalizedKey of normalizedKeys) {
+    if (process.env?.[normalizedKey]) {
+      return process.env[normalizedKey];
+    }
+  }
+
+  if (!fallback) {
+    console.warn(`⚠️ Missing Firebase config value for ${key}. Using empty string fallback.`);
+  }
+  return fallback;
+};
+
+// Firebase configuration - driven by environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyCNsGqskpxHTGH_YueMeQ46ACvCPx4yhL8",
-  authDomain: "spedflowapp.firebaseapp.com", // Temporary: Use Firebase domain until custom domain is authorized
-  databaseURL: "https://spedflowapp-default-rtdb.firebaseio.com",
-  projectId: "spedflowapp",
-  storageBucket: "spedflowapp.firebasestorage.app",
-  messagingSenderId: "678556676280",
-  appId: "1:678556676280:web:dcf726cfb649338a0b844d",
-  measurementId: "G-XQ10LTCEY8"
+  apiKey: getEnv('FIREBASE_API_KEY'),
+  authDomain: getEnv('FIREBASE_AUTH_DOMAIN', 'localhost'),
+  databaseURL: getEnv('FIREBASE_DATABASE_URL'),
+  projectId: getEnv('FIREBASE_PROJECT_ID'),
+  storageBucket: getEnv('FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: getEnv('FIREBASE_MESSAGING_SENDER_ID'),
+  appId: getEnv('FIREBASE_APP_ID'),
+  measurementId: getEnv('FIREBASE_MEASUREMENT_ID', undefined)
 };
 
 // Initialize Firebase - check if already initialized to prevent duplicate app error
 let app;
 try {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  console.log('✅ Firebase app initialized successfully');
-  console.log('📍 Firebase Project:', firebaseConfig.projectId);
-  console.log('🔐 Auth Domain:', firebaseConfig.authDomain);
   
   // Firebase is ready for authentication
 } catch (error) {
@@ -38,28 +55,19 @@ let auth;
 try {
   if (Platform.OS === 'web') {
     auth = getAuth(app);
-    console.log('✅ Firebase Auth initialized for web');
   } else {
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage)
     });
-    console.log('✅ Firebase Auth initialized for mobile');
   }
 } catch (error) {
   // Auth already initialized, get existing instance
-  console.warn('⚠️ Auth already initialized, using existing instance');
   auth = getAuth(app);
 }
 
 // Add network error debugging
 auth.onAuthStateChanged((user) => {
-  if (user) {
-    console.log('✅ User authenticated:', user.email);
-  } else {
-    console.log('👤 No user authenticated');
-  }
-}, (error) => {
-  console.error('❌ Auth state change error:', error);
+  // Silent auth state monitoring
 });
 
 // Initialize Firestore
@@ -91,7 +99,7 @@ if (Platform.OS === 'web') {
 
 // Initialize Cloud Messaging (web only)
 let messaging = null;
-const vapidKey = process.env.FIREBASE_VAPID_KEY || 'BDyAbFqr4yfK_4NyhiIMBs_UugbF5Ul4bJEc0gW_s4Xi4h-CErs3aXZHVQuqhv6r-HFaVM8-Izn-MW8U-N_XpK4';
+const vapidKey = getEnv('FIREBASE_VAPID_KEY');
 
 // Check if messaging is supported before initializing
 const isMessagingSupported = () => {
@@ -127,13 +135,10 @@ const isMessagingSupported = () => {
 if (isMessagingSupported()) {
   try {
     messaging = getMessaging(app);
-    console.log('✅ Firebase Messaging initialized successfully');
   } catch (error) {
-    console.warn('⚠️ Firebase Messaging initialization failed:', error.message);
     messaging = null;
   }
 } else {
-  console.log('ℹ️ Firebase Messaging not supported in this browser/context');
   messaging = null;
 }
 

@@ -1,15 +1,83 @@
 import FirebaseService from './FirebaseService';
+import API_CONFIG from '../config/api';
+import logger from '../utils/logger';
 
 class AIService {
   constructor() {
-    this.apiKey = process.env.DEEPSEEK_API_KEY;
+    this.apiKey = API_CONFIG.DEEPSEEK_API_KEY;
     this.baseURL = 'https://api.deepseek.com/v1';
+    
+    // Cache for user data to avoid repeated loading
+    this.userDataCache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+    
+    // AI Mode Settings
+    this.aiModes = {
+      fast: {
+        maxTokens: 150,
+        temperature: 0.3,
+        dataLimit: { transactions: 5, directDebits: 3, cards: 2 },
+        description: 'Fast responses with basic insights'
+      },
+      balanced: {
+        maxTokens: 300,
+        temperature: 0.5,
+        dataLimit: { transactions: 15, directDebits: 10, cards: 5 },
+        description: 'Good balance of speed and detail'
+      },
+      detailed: {
+        maxTokens: 600,
+        temperature: 0.7,
+        dataLimit: { transactions: 30, directDebits: 20, cards: 10 },
+        description: 'Comprehensive analysis with detailed insights'
+      }
+    };
+    
+    // Current mode (default to balanced)
+    this.currentMode = 'balanced';
+    
+    // Check if API key is available (no logging for security)
+    if (!this.apiKey || this.apiKey === 'your_deepseek_api_key_here') {
+      this.isConfigured = false;
+    } else {
+      this.isConfigured = true;
+    }
   }
 
-  // Load complete user financial data for AI analysis
+  // Set AI mode for speed/quality balance
+  setAIMode(mode) {
+    if (this.aiModes[mode]) {
+      this.currentMode = mode;
+      return true;
+    }
+    return false;
+  }
+
+  // Get current AI mode settings
+  getCurrentModeSettings() {
+    return this.aiModes[this.currentMode];
+  }
+
+  // Get available AI modes
+  getAvailableModes() {
+    return Object.keys(this.aiModes).map(key => ({
+      key,
+      ...this.aiModes[key],
+      isCurrent: key === this.currentMode
+    }));
+  }
+
+  // Load complete user financial data for AI analysis (optimized for speed)
   async loadUserFinancialData(uid) {
+    // Check cache first
+    const cacheKey = uid;
+    const cached = this.userDataCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      return cached.data;
+    }
+
     try {
-      // Load all user data in parallel
+      // Load only essential data for AI (minimal for speed)
       const [
         transactions,
         directDebits,
@@ -26,9 +94,13 @@ class AIService {
         FirebaseService.getUserBudgets(uid)
       ]);
 
-      // Process transactions for AI
+      // Get current mode settings
+      const modeSettings = this.getCurrentModeSettings();
+      const limits = modeSettings.dataLimit;
+
+      // Process transactions for AI - use mode-specific limits
       const processedTransactions = (transactions.success ? transactions.data : [])
-        .slice(0, 100) // Last 100 transactions
+        .slice(0, limits.transactions)
         .map(t => ({
           id: t.id,
           type: t.type,
@@ -36,61 +108,81 @@ class AIService {
           category: t.category,
           description: t.description || t.category,
           date: t.date || t.createdAt,
-          cardName: t.cardName || 'Unknown',
-          time: t.time
+          cardName: t.cardName || 'Unknown'
         }));
 
-      // Process direct debits for AI
+      // Process direct debits for AI - use mode-specific limits
       const processedDirectDebits = (directDebits.success ? directDebits.data : [])
         .filter(dd => dd.status === 'Active')
+        .slice(0, limits.directDebits)
         .map(dd => ({
           name: dd.name || dd.merchant || 'Unknown',
           amount: dd.amount,
           frequency: dd.frequency || 'Monthly',
           nextDate: dd.nextDate,
-          category: dd.category || 'Subscription'
+          category: dd.category,
+          description: dd.description || ''
         }));
 
-      // Process cards for AI
+      // Process cards for AI - use mode-specific limits
       const processedCards = (cards.success ? cards.data : [])
+        .slice(0, limits.cards)
         .map(c => ({
-          name: c.bank + ' ****' + c.lastFour,
+          name: c.name,
           type: c.type,
-          balance: c.balance || 0
+          balance: c.balance || 0,
+          bank: c.bank,
+          limit: c.limit || 0
+        }));
+
+      // Process savings for AI
+      const processedSavings = (savings.success ? savings.data : [])
+        .slice(0, 5)
+        .map(s => ({
+          name: s.name,
+          balance: s.balance || 0,
+          interestRate: s.interestRate || 0
         }));
 
       // Process goals for AI
       const processedGoals = (goals.success ? goals.data : [])
+        .slice(0, 5)
         .map(g => ({
           name: g.name,
-          targetAmount: g.targetAmount,
+          targetAmount: g.targetAmount || 0,
           currentAmount: g.currentAmount || 0,
-          progress: ((g.currentAmount || 0) / g.targetAmount) * 100,
-          status: g.status
+          progress: g.progress || 0,
+          deadline: g.deadline
         }));
 
       // Process budgets for AI
       const processedBudgets = (budgets.success ? budgets.data : [])
+        .slice(0, 5)
         .map(b => ({
           category: b.category,
-          amount: b.amount,
+          amount: b.amount || 0,
           spent: b.spent || 0,
-          remaining: b.amount - (b.spent || 0)
+          period: b.period || 'monthly'
         }));
 
-      return {
-        success: true,
-        data: {
-          transactions: processedTransactions,
-          directDebits: processedDirectDebits,
-          cards: processedCards,
-          savings: savings.success ? savings.data : [],
-          goals: processedGoals,
-          budgets: processedBudgets
-        }
+      const financialData = {
+        transactions: processedTransactions,
+        directDebits: processedDirectDebits,
+        cards: processedCards,
+        savings: processedSavings,
+        goals: processedGoals,
+        budgets: processedBudgets
       };
+
+      // Cache the result
+      this.userDataCache.set(cacheKey, {
+        data: { success: true, data: financialData },
+        timestamp: Date.now()
+      });
+
+      return { success: true, data: financialData };
     } catch (error) {
-      console.error('Error loading user financial data:', error);
+      console.error('Error loading financial data:', error);
       return {
         success: false,
         error: error.message,
@@ -101,6 +193,13 @@ class AIService {
 
   // Make API request to DeepSeek
   async makeRequest(endpoint, data) {
+    if (!this.isConfigured) {
+      throw new Error('AI Service is not configured. Please add a valid DeepSeek API key to your .env file.');
+    }
+    
+    const startTime = Date.now();
+    logger.ai.request(endpoint, this.currentMode);
+    
     try {
       const response = await fetch(`${this.baseURL}${endpoint}`, {
         method: 'POST',
@@ -112,12 +211,23 @@ class AIService {
       });
 
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('API key is invalid or expired. Please check your DeepSeek API key.');
+        } else if (response.status === 429) {
+          throw new Error('API rate limit exceeded. Please try again later.');
+        } else {
+          throw new Error(`API request failed: ${response.status}`);
+        }
       }
 
-      return await response.json();
+      const result = await response.json();
+      const duration = Date.now() - startTime;
+      const tokens = result.usage?.total_tokens || 'unknown';
+      logger.ai.response(tokens, duration);
+      
+      return result;
     } catch (error) {
-      console.error('AI Service error:', error);
+      logger.ai.error(error);
       throw error;
     }
   }
@@ -217,11 +327,45 @@ class AIService {
 
   // Answer natural language financial queries with user learning
   async answerFinancialQuery(query, userData, userPreferences = {}, conversationHistory = []) {
+    // Check if AI service is configured
+    if (!this.isConfigured) {
+      return {
+        success: false,
+        error: 'AI Service is not configured. Please add a valid DeepSeek API key to your .env file.',
+        answer: 'I\'m sorry, the AI assistant is not currently available. Please contact support to enable this feature.'
+      };
+    }
+    
     // Load complete financial data for this user
     const fullUserData = await this.loadUserFinancialData(userData.uid);
     const financialData = fullUserData.success ? fullUserData.data : { transactions: [], directDebits: [], cards: [], savings: [], goals: [], budgets: [] };
 
     const q = query.toLowerCase();
+
+    // INSTANT RESPONSES - No API call needed for common questions
+    if (q.includes('hello') || q.includes('hi') || q.includes('hey')) {
+      return {
+        success: true,
+        answer: `Hi ${userData.userName || 'there'}! I'm here to help with your finances. You can ask me about your transactions, direct debits, or account balances. What would you like to know?`
+      };
+    }
+
+    if (q.includes('how many') && q.includes('direct debit')) {
+      const count = (financialData.directDebits || []).length;
+      return {
+        success: true,
+        answer: `You have ${count} active direct debit${count !== 1 ? 's' : ''}. ${count > 0 ? 'Would you like me to list them for you?' : ''}`
+      };
+    }
+
+    if (q.includes('balance') || q.includes('how much money')) {
+      const totalBalance = (financialData.cards || []).reduce((sum, card) => sum + (card.balance || 0), 0);
+      const cardCount = (financialData.cards || []).length;
+      return {
+        success: true,
+        answer: `Your total balance across ${cardCount} card${cardCount !== 1 ? 's' : ''} is £${totalBalance.toFixed(2)}.`
+      };
+    }
 
     // Deterministic answers for key data questions so we never hallucinate about what the user has
     const hasDirectDebits = (financialData.directDebits || []).length > 0;
@@ -565,17 +709,26 @@ LIST EACH CARD with name, type, and current balance.
 When asked about goals:
 LIST EACH GOAL with name, progress percentage, and target amount.
 
-Recent Transactions (last 20):
-${financialData.transactions.slice(0, 20).map(t => `${t.description}: £${Math.abs(t.amount || 0).toFixed(2)} (${new Date(t.date).toLocaleDateString()})`).join('\n')}
+Recent Transactions (last ${financialData.transactions.length}):
+${financialData.transactions.map(t => `${t.description}: £${Math.abs(t.amount || 0).toFixed(2)}`).join('\n')}
 
-Active Direct Debits:
-${financialData.directDebits.map(dd => `${dd.name}: £${dd.amount} (${dd.frequency}) - Next: ${dd.nextDate ? new Date(dd.nextDate).toLocaleDateString() : 'Unknown'}`).join('\n') || 'None'}
+Direct Debits (${financialData.directDebits.length}):
+${financialData.directDebits.map(dd => `${dd.name}: £${dd.amount} (${dd.frequency})`).join('\n') || 'None'}
 
-Account Balances:
-${financialData.cards.map(c => `${c.name}: £${c.balance.toFixed(2)} (${c.type})`).join('\n') || 'No cards'}
+Balances (${financialData.cards.length}):
+${financialData.cards.map(c => `${c.name}: £${c.balance.toFixed(2)}`).join('\n') || 'No cards'}
 
-Goals Progress:
-${financialData.goals.map(g => `${g.name}: £${(g.currentAmount || 0).toFixed(2)}/£${g.targetAmount.toFixed(2)} (${g.progress.toFixed(1)}%)`).join('\n') || 'No goals set'}
+${financialData.goals.length > 0 ? `
+Goals Progress (${financialData.goals.length}):
+${financialData.goals.map(g => `${g.name}: £${(g.currentAmount || 0).toFixed(2)}/£${g.targetAmount.toFixed(2)} (${g.progress.toFixed(1)}%)`).join('\n')}` : ''}
+
+${financialData.budgets.length > 0 ? `
+Budget Status (${financialData.budgets.length}):
+${financialData.budgets.map(b => `${b.category}: £${(b.spent || 0).toFixed(2)}/£${b.amount.toFixed(2)} (${((b.spent || 0) / b.amount * 100).toFixed(1)}%)`).join('\n')}` : ''}
+
+${financialData.savings.length > 0 ? `
+Savings Accounts (${financialData.savings.length}):
+${financialData.savings.map(s => `${s.name}: £${s.balance.toFixed(2)} (${s.interestRate || 0}% rate)`).join('\n')}` : ''}
 `;
 
     try {
@@ -649,8 +802,8 @@ CONVERSATION PERSONALITY:
             content: prompt
           }
         ],
-        temperature: 0.9,
-        max_tokens: 1200
+        temperature: this.getCurrentModeSettings().temperature,
+        max_tokens: this.getCurrentModeSettings().maxTokens
       });
 
       return {
@@ -991,6 +1144,259 @@ Try asking me again in a moment, or feel free to explore these sections for now!
         error: error.message
       };
     }
+  }
+
+  // Advanced Spending Analysis
+  async analyzeSpendingPatterns(uid, timeframe = 'month') {
+    const userData = await this.loadUserFinancialData(uid);
+    if (!userData.success) return { success: false, error: userData.error };
+
+    const transactions = userData.data.transactions || [];
+    const now = new Date();
+    const timeframes = {
+      week: 7,
+      month: 30,
+      year: 365
+    };
+    
+    const days = timeframes[timeframe] || 30;
+    const cutoffDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
+    
+    const recentTransactions = transactions.filter(t => 
+      new Date(t.date || t.createdAt) >= cutoffDate
+    );
+
+    // Category analysis
+    const categoryTotals = {};
+    recentTransactions.forEach(t => {
+      const category = t.category || 'Other';
+      categoryTotals[category] = (categoryTotals[category] || 0) + Math.abs(parseFloat(t.amount || 0));
+    });
+
+    // Find top categories
+    const topCategories = Object.entries(categoryTotals)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5);
+
+    // Calculate patterns
+    const totalSpent = recentTransactions.reduce((sum, t) => sum + Math.abs(parseFloat(t.amount || 0)), 0);
+    const avgTransaction = totalSpent / recentTransactions.length;
+    const dailyAverage = totalSpent / days;
+
+    // Detect anomalies (transactions > 3x average)
+    const anomalies = recentTransactions.filter(t => 
+      Math.abs(parseFloat(t.amount || 0)) > (avgTransaction * 3)
+    );
+
+    return {
+      success: true,
+      analysis: {
+        timeframe,
+        totalTransactions: recentTransactions.length,
+        totalSpent,
+        dailyAverage,
+        avgTransaction,
+        topCategories,
+        anomalies: anomalies.map(t => ({
+          description: t.description,
+          amount: t.amount,
+          date: t.date,
+          category: t.category
+        })),
+        insights: this.generateSpendingInsights(topCategories, anomalies, totalSpent)
+      }
+    };
+  }
+
+  // Generate spending insights
+  generateSpendingInsights(topCategories, anomalies, totalSpent) {
+    const insights = [];
+    
+    if (topCategories.length > 0) {
+      const topCategory = topCategories[0];
+      const percentage = ((topCategory[1] / totalSpent) * 100).toFixed(1);
+      insights.push(`Your highest spending category is ${topCategory[0]} at ${percentage}% of total spending`);
+    }
+
+    if (anomalies.length > 0) {
+      insights.push(`Found ${anomalies.length} unusual transactions that are significantly higher than your average`);
+    }
+
+    if (totalSpent > 1000) {
+      insights.push('Your spending is relatively high - consider reviewing your budget');
+    }
+
+    return insights;
+  }
+
+  // Financial Health Score
+  async calculateFinancialHealthScore(uid) {
+    const userData = await this.loadUserFinancialData(uid);
+    if (!userData.success) return { success: false, error: userData.error };
+
+    const cards = userData.data.cards || [];
+    const directDebits = userData.data.directDebits || [];
+    const goals = userData.data.goals || [];
+    const budgets = userData.data.budgets || [];
+
+    let score = 50; // Base score
+    let factors = [];
+
+    // Balance factor (30 points)
+    const totalBalance = cards.reduce((sum, card) => sum + (card.balance || 0), 0);
+    if (totalBalance > 1000) {
+      score += 20;
+      factors.push('Good account balances');
+    } else if (totalBalance > 0) {
+      score += 10;
+      factors.push('Positive balances');
+    } else {
+      score -= 10;
+      factors.push('Low or negative balances');
+    }
+
+    // Direct debit management (20 points)
+    const activeDebits = directDebits.filter(dd => dd.status === 'Active');
+    if (activeDebits.length <= 5) {
+      score += 15;
+      factors.push('Manageable number of direct debits');
+    } else if (activeDebits.length <= 10) {
+      score += 5;
+      factors.push('Moderate direct debit commitments');
+    } else {
+      score -= 5;
+      factors.push('Many direct debit commitments');
+    }
+
+    // Goals progress (20 points)
+    if (goals.length > 0) {
+      const avgProgress = goals.reduce((sum, g) => sum + (g.progress || 0), 0) / goals.length;
+      if (avgProgress > 50) {
+        score += 15;
+        factors.push('Good progress on financial goals');
+      } else if (avgProgress > 25) {
+        score += 5;
+        factors.push('Making progress on goals');
+      }
+    } else {
+      factors.push('No financial goals set');
+    }
+
+    // Budget adherence (30 points)
+    if (budgets.length > 0) {
+      const onTrackBudgets = budgets.filter(b => (b.spent || 0) <= (b.amount || 0));
+      const budgetScore = (onTrackBudgets.length / budgets.length) * 30;
+      score += Math.round(budgetScore) - 15;
+      factors.push(`${onTrackBudgets.length}/${budgets.length} budgets on track`);
+    }
+
+    score = Math.max(0, Math.min(100, score));
+
+    return {
+      success: true,
+      score,
+      rating: this.getHealthRating(score),
+      factors,
+      recommendations: this.getHealthRecommendations(score, factors)
+    };
+  }
+
+  getHealthRating(score) {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Fair';
+    return 'Needs Improvement';
+  }
+
+  getHealthRecommendations(score, factors) {
+    const recommendations = [];
+    
+    if (score < 60) {
+      recommendations.push('Consider setting up a budget to track spending');
+      recommendations.push('Review your direct debits for any unused services');
+    }
+    
+    if (score < 40) {
+      recommendations.push('Focus on building an emergency fund');
+      recommendations.push('Look for ways to reduce monthly expenses');
+    }
+
+    if (score >= 80) {
+      recommendations.push('Consider investing or increasing savings goals');
+    }
+
+    return recommendations;
+  }
+
+  // Proactive Insights
+  async getProactiveInsights(uid) {
+    const userData = await this.loadUserFinancialData(uid);
+    if (!userData.success) return { success: false, error: userData.error };
+
+    const insights = [];
+    const directDebits = userData.data.directDebits || [];
+    const cards = userData.data.cards || [];
+    const transactions = userData.data.transactions || [];
+
+    // Upcoming direct debits
+    const upcomingDebits = directDebits.filter(dd => {
+      if (!dd.nextDate) return false;
+      const nextDate = new Date(dd.nextDate);
+      const daysUntil = Math.ceil((nextDate - new Date()) / (1000 * 60 * 60 * 24));
+      return daysUntil <= 7 && daysUntil >= 0;
+    });
+
+    if (upcomingDebits.length > 0) {
+      insights.push({
+        type: 'upcoming_payments',
+        message: `${upcomingDebits.length} direct debit${upcomingDebits.length > 1 ? 's are' : ' is'} due in the next 7 days`,
+        data: upcomingDebits
+      });
+    }
+
+    // Low balance warnings
+    const lowBalanceCards = cards.filter(card => {
+      const balance = card.balance || 0;
+      const limit = card.limit || 0;
+      return limit > 0 && (balance / limit) < 0.2;
+    });
+
+    if (lowBalanceCards.length > 0) {
+      insights.push({
+        type: 'low_balance',
+        message: `${lowBalanceCards.length} card${lowBalanceCards.length > 1 ? 's have' : ' has'} low balances`,
+        data: lowBalanceCards
+      });
+    }
+
+    // Spending spikes
+    const recentTransactions = transactions.slice(0, 10);
+    const avgAmount = recentTransactions.reduce((sum, t) => sum + Math.abs(parseFloat(t.amount || 0)), 0) / recentTransactions.length;
+    const spikes = recentTransactions.filter(t => Math.abs(parseFloat(t.amount || 0)) > avgAmount * 2);
+
+    if (spikes.length > 2) {
+      insights.push({
+        type: 'spending_spike',
+        message: 'Recent spending spike detected',
+        data: spikes
+      });
+    }
+
+    return {
+      success: true,
+      insights,
+      summary: `Found ${insights.length} important financial updates`
+    };
+  }
+
+  // Background data loading
+  async preloadUserData(uid) {
+    await this.loadUserFinancialData(uid);
+  }
+
+  // Clear cache for fresh data
+  clearCache() {
+    this.userDataCache.clear();
   }
 }
 

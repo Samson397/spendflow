@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import FirebaseService from '../services/FirebaseService';
 import { useCustomAlert } from '../contexts/AlertContext';
 import { validateSavingsAccountLimit } from '../utils/UserLimits';
+import { safeGoBack } from '../utils/NavigationHelper';
 
 export default function SavingsAccountScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -438,7 +439,7 @@ export default function SavingsAccountScreen({ navigation, route }) {
         <View style={styles.headerTop}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation, 'Dashboard')}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>

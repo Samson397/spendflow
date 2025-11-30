@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useCustomAlert } from '../contexts/AlertContext';
 import FirebaseService from '../services/FirebaseService';
+import { safeGoBack } from '../utils/NavigationHelper';
 
 export default function DirectDebitsScreen({ navigation, route }) {
   const { user } = useAuth();
@@ -98,6 +99,7 @@ export default function DirectDebitsScreen({ navigation, route }) {
 
   // Form state
   const [debitName, setDebitName] = useState('');
+  const [debitDescription, setDebitDescription] = useState('');
   const [debitAmount, setDebitAmount] = useState('');
   const [debitFrequency, setDebitFrequency] = useState('Monthly');
   const [debitCategory, setDebitCategory] = useState('Entertainment');
@@ -996,6 +998,7 @@ Company,Amount,Frequency,Category,Date`
     
     setSelectedDebit(debit);
     setDebitName(debit.name);
+    setDebitDescription(debit.description || '');
     setDebitAmount(debit.amount);
     setDebitFrequency(debit.frequency);
     setDebitCategory(debit.category);
@@ -1055,6 +1058,7 @@ Company,Amount,Frequency,Category,Date`
 
     const newDebit = {
       name: debitName,
+      description: debitDescription.trim(),
       amount: debitAmount.startsWith('£') ? debitAmount : `£${debitAmount}`,
       frequency: debitFrequency,
       category: debitCategory,
@@ -1088,6 +1092,7 @@ Company,Amount,Frequency,Category,Date`
     
     // Reset form and clear errors
     setDebitName('');
+    setDebitDescription('');
     setDebitAmount('');
     setDebitFrequency('Monthly');
     setDebitCategory('Entertainment');
@@ -1095,6 +1100,10 @@ Company,Amount,Frequency,Category,Date`
     setSelectedCreditCard(null);
     setErrors({});
     setCategoryDropdownVisible(false);
+    // Blur any focused input to prevent accessibility warnings
+    if (typeof document !== 'undefined') {
+      document.activeElement?.blur();
+    }
     setAddModalVisible(false);
   };
 
@@ -1159,6 +1168,7 @@ Company,Amount,Frequency,Category,Date`
 
     const updatedDebit = {
       name: debitName,
+      description: debitDescription.trim(),
       amount: debitAmount.startsWith('£') ? debitAmount : `£${debitAmount}`,
       frequency: debitFrequency,
       category: debitCategory,
@@ -1182,6 +1192,7 @@ Company,Amount,Frequency,Category,Date`
 
     // Reset form and clear errors
     setDebitName('');
+    setDebitDescription('');
     setDebitAmount('');
     setDebitFrequency('Monthly');
     setDebitCategory('Entertainment');
@@ -1189,6 +1200,10 @@ Company,Amount,Frequency,Category,Date`
     setSelectedCreditCard(null);
     setErrors({});
     setCategoryDropdownVisible(false);
+    // Blur any focused input to prevent accessibility warnings
+    if (typeof document !== 'undefined') {
+      document.activeElement?.blur();
+    }
     setEditModalVisible(false);
     setSelectedDebit(null);
   };
@@ -1253,7 +1268,7 @@ Company,Amount,Frequency,Category,Date`
         <View style={styles.headerTop}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => safeGoBack(navigation, 'Dashboard')}
           >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
@@ -1331,6 +1346,14 @@ Company,Amount,Frequency,Category,Date`
                   <Text style={styles.debitEmoji}>{getCategoryEmoji(debit.category)}</Text>
                   <View>
                     <Text style={[styles.debitName, { color: theme.text }]}>{debit.name}</Text>
+                    <Text style={[styles.debitCategory, { color: theme.textSecondary }]}>
+                      {debit.category || 'Other'}
+                    </Text>
+                    {debit.description && (
+                      <Text style={[styles.debitDescription, { color: theme.textSecondary }]}>
+                        {debit.description}
+                      </Text>
+                    )}
                     <Text style={[styles.debitDetails, { color: theme.textSecondary }]}>
                       {debit.frequency} • Next: {debit.nextDate}
                     </Text>
@@ -1460,6 +1483,25 @@ Company,Amount,Frequency,Category,Date`
                   }}
                 />
                 {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description (Optional)</Text>
+                <TextInput
+                  style={[styles.input, errors.description && styles.inputError]}
+                  placeholder="e.g. Premium subscription, Monthly streaming service"
+                  placeholderTextColor="#a0aec0"
+                  value={debitDescription}
+                  onChangeText={(text) => {
+                    setDebitDescription(text);
+                    if (errors.description) {
+                      setErrors(prev => ({ ...prev, description: null }));
+                    }
+                  }}
+                  multiline
+                  numberOfLines={2}
+                />
+                {errors.description && <Text style={styles.errorText}>{errors.description}</Text>}
               </View>
 
               {/* Amount and Date side by side */}
@@ -1673,6 +1715,25 @@ Company,Amount,Frequency,Category,Date`
                   }}
                 />
                 {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Description (Optional)</Text>
+                <TextInput
+                  style={[styles.input, errors.description && styles.inputError]}
+                  placeholder="e.g. Premium subscription, Monthly streaming service"
+                  placeholderTextColor="#a0aec0"
+                  value={debitDescription}
+                  onChangeText={(text) => {
+                    setDebitDescription(text);
+                    if (errors.description) {
+                      setErrors(prev => ({ ...prev, description: null }));
+                    }
+                  }}
+                  multiline
+                  numberOfLines={2}
+                />
+                {errors.description && <Text style={styles.errorText}>{errors.description}</Text>}
               </View>
 
               <View style={styles.formRow}>
@@ -2040,7 +2101,6 @@ British Gas,£85.50,Monthly,Utilities,01/02/2024`}
               <TouchableOpacity 
                 style={styles.cancelButton} 
                 onPress={() => {
-                  console.log('User canceled file processing');
                   setNumbersFileModalVisible(false);
                   setSelectedNumbersFile(null);
                 }}
@@ -2054,7 +2114,6 @@ British Gas,£85.50,Monthly,Utilities,01/02/2024`}
                 <TouchableOpacity 
                   style={styles.submitButton} 
                   onPress={() => {
-                    console.log('User clicked process file, starting processing...');
                     setNumbersFileModalVisible(false);
                     if (selectedNumbersFile) {
                       processUploadedFile(selectedNumbersFile);
@@ -2112,7 +2171,6 @@ British Gas,£85.50,Monthly,Utilities,01/02/2024`}
               <TouchableOpacity 
                 style={styles.cancelButton} 
                 onPress={() => {
-                  console.log('User canceled import');
                   setImportConfirmModalVisible(false);
                   setParsedDebits([]);
                 }}
@@ -2122,7 +2180,6 @@ British Gas,£85.50,Monthly,Utilities,01/02/2024`}
               <TouchableOpacity 
                 style={styles.submitButton} 
                 onPress={() => {
-                  console.log('User clicked Import All, calling saveImportedDebits...');
                   setImportConfirmModalVisible(false);
                   saveImportedDebits(parsedDebits);
                 }}
@@ -2250,6 +2307,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1a202c',
     marginBottom: 2,
+  },
+  debitCategory: {
+    fontSize: 13,
+    color: '#718096',
+    fontStyle: 'italic',
+    marginBottom: 2,
+  },
+  debitDescription: {
+    fontSize: 12,
+    color: '#718096',
+    fontStyle: 'normal',
+    marginBottom: 2,
+    lineHeight: 16,
   },
   debitDetails: {
     fontSize: 14,

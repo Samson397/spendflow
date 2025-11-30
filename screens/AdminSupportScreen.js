@@ -41,7 +41,6 @@ export default function AdminSupportScreen({ navigation }) {
       setTickets(ticketsData);
       setStats(ticketStats);
       
-      console.log('Loaded real support tickets:', ticketsData.length);
     } catch (error) {
       console.error('Failed to load tickets:', error);
       

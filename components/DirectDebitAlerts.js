@@ -27,14 +27,11 @@ export default function DirectDebitAlerts() {
       const debitsUnsubscribe = FirebaseService.subscribeToUserDirectDebits(
         user.uid,
         (debits) => {
-          // Process the debits to add upcoming info
-          console.log('Raw debits from Firebase:', debits.length);
-          
+          // Process the debits to add upcoming info (silent processing)
           const processedDebits = debits
             .filter(debit => {
               const isActive = debit.status === 'Active';
               const hasNextDate = debit.nextDate;
-              console.log(`Debit ${debit.name}: status=${debit.status}, nextDate=${debit.nextDate}, isActive=${isActive}, hasNextDate=${hasNextDate}`);
               return isActive && hasNextDate;
             })
             .map(debit => {
@@ -46,8 +43,6 @@ export default function DirectDebitAlerts() {
               
               const daysUntilPayment = Math.ceil((nextPaymentDate - today) / (24 * 60 * 60 * 1000));
               
-              console.log(`Processed ${debit.name}: nextPaymentDate=${nextPaymentDate.toISOString().split('T')[0]}, daysUntilPayment=${daysUntilPayment}`);
-              
               return {
                 ...debit,
                 nextPaymentDate,
@@ -58,12 +53,9 @@ export default function DirectDebitAlerts() {
               const thirtyDaysFromNow = new Date();
               thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
               const isWithinRange = debit.nextPaymentDate <= thirtyDaysFromNow && debit.daysUntilPayment >= 0;
-              console.log(`${debit.name} within 30 days: ${isWithinRange}`);
               return isWithinRange;
             })
             .sort((a, b) => a.nextPaymentDate - b.nextPaymentDate);
-          
-          console.log('Final processed debits:', processedDebits.length);
           
           setUpcomingDebits(processedDebits);
         }

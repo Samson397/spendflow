@@ -21,11 +21,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
       allow update: if request.auth != null;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
       
       // Comments on tips
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null;
+        allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+        allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
       }
     }
     
@@ -35,9 +38,56 @@ service cloud.firestore {
       allow read: if false; // Admin access via Firebase Console
     }
     
-    // For development - allow all authenticated users (remove in production)
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // Notifications - users can read their own notifications
+    match /notifications/{notificationId} {
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
+    // Global notifications - authenticated users can read
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null;
+      allow create: if false; // System only
+      allow update, delete: if false; // System only
+    }
+    
+    // Split Bills - participants can read, creators can write
+    match /splitBills/{billId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || resource.data.createdBy == request.auth.uid);
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && resource.data.createdBy == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
+    }
+    
+    // Connections - users can manage their own connections
+    match /connections/{connectionId} {
+      allow read: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+      allow delete: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+    }
+    
+    // Payment Requests - sender and receiver can access
+    match /paymentRequests/{requestId} {
+      allow read: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || resource.data.toUserId == request.auth.uid);
+      allow delete: if request.auth != null && resource.data.fromUserId == request.auth.uid;
+    }
+    
+    // Email Queue - system only
+    match /emailQueue/{queueId} {
+      allow read, write: if false; // System only via Firebase Functions
+    }
+    
+    // Email Logs - system only
+    match /emailLogs/{logId} {
+      allow read, write: if false; // System only via Firebase Functions
     }
   }
 }

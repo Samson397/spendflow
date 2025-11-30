@@ -182,7 +182,8 @@ class LocationService {
       if (!this.locationPermissionGranted) {
         const permissionGranted = await this.requestLocationPermissionWithModal();
         if (!permissionGranted) {
-          throw new Error('Location permission denied');
+          console.warn('Location permission denied');
+          return null;
         }
       }
 

@@ -7,7 +7,8 @@ const SEO = ({
   keywords = "free personal finance app, privacy finance tracker, manual expense tracker, virtual cards, budget management, savings goals, no bank connection, private money management",
   image = "https://spedflowapp.web.app/assets/assets/hero.8ee57dbdcfd159794617d4cde94fd912.jpg",
   url = "https://spedflowapp.web.app/",
-  type = "website"
+  type = "website",
+  noIndex = false,
 }) => {
   return (
     <Helmet>
@@ -15,7 +16,10 @@ const SEO = ({
       <title>{title}</title>
       <meta name="description" content={description} />
       <meta name="keywords" content={keywords} />
-      <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+      <meta
+        name="robots"
+        content={noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'}
+      />
       <link rel="canonical" href={url} />
 
       {/* Open Graph Meta Tags */}

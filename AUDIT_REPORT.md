@@ -8,6 +8,7 @@
 ## 📊 Executive Summary
 
 ### ✅ Overall Status: PRODUCTION READY
+- ⚠️ AI assistant features stay disabled until `EXPO_PUBLIC_DEEPSEEK_API_KEY` (or equivalent) is configured.
 - **Total Screens:** 33
 - **Services:** 8
 - **Contexts:** 5
@@ -69,12 +70,15 @@
 
 ## 🔥 Firebase Integration Analysis
 
-### **Configuration Status: ✅ CORRECT**
+### **Configuration Status: ✅ ENVIRONMENT-DRIVEN**
 ```javascript
 // config/firebase.js
-authDomain: "spendflow.uk" ✅ // Custom domain configured
-apiKey: "AIzaSyCNsGqskpxHTGH_YueMeQ46ACvCPx4yhL8" ✅
-projectId: "spedflowapp" ✅
+// All Firebase config values are now loaded from environment variables
+// No hardcoded secrets in source code
+// Supports: EXPO_PUBLIC_*, NEXT_PUBLIC_*, REACT_APP_* prefixes
+projectId: getEnv('FIREBASE_PROJECT_ID') ✅
+authDomain: getEnv('FIREBASE_AUTH_DOMAIN') ✅
+apiKey: getEnv('FIREBASE_API_KEY') ✅
 ```
 
 ### **Firebase Services Used:**
@@ -97,8 +101,8 @@ projectId: "spedflowapp" ✅
 
 ## 🎯 Core Services Audit
 
-### **1. AIService.js** ✅
-- **Status:** Fully functional
+### **1. AIService.js** ⚠️
+- **Status:** Feature gated – requires DeepSeek API key in env (`EXPO_PUBLIC_DEEPSEEK_API_KEY`)
 - **Features:**
   - Multi-language support (6 languages)
   - Financial query answering
@@ -107,7 +111,7 @@ projectId: "spedflowapp" ✅
   - Cash flow prediction
   - Anomaly detection
 - **API:** DeepSeek AI integration
-- **Issues:** None
+- **Issues:** Disabled by default when API key missing
 
 ### **2. FirebaseService.js** ✅
 - **Status:** Production ready

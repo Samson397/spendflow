@@ -8,6 +8,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "main": "index.js",
+    "sdkVersion": "54.0.0",
     "splash": {
       "image": "./assets/logo.png",
       "resizeMode": "contain",
@@ -43,7 +44,8 @@
       "build": {
         "babel": {
           "include": ["@expo/html-elements"]
-        }
+        },
+        "output": "single"
       },
       "meta": {
         "apple-mobile-web-app-capable": "yes",

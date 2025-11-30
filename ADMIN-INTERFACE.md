@@ -36,9 +36,26 @@ A comprehensive admin dashboard for managing SpendFlow users, analytics, and sup
 
 ### **📱 How to Access:**
 
-1. **Create Admin User**: Sign up with `spendflowapp@gmail.com`
-2. **Access Dashboard**: Profile → Admin Dashboard
-3. **Manage Everything**: Users, support, analytics from one place
+1. **Create Regular Account**: Sign up with any email at spendflow.uk
+2. **Set Admin Claims**: Use Firebase Functions to set admin custom claims
+3. **Access Dashboard**: Sign back in to see admin interface
+4. **Manage Everything**: Users, support, analytics from one place
+
+### **🔐 Setting Up First Admin (Secure Method):**
+
+```bash
+# Method 1: Use Firebase Console
+1. Go to Firebase Console → Authentication → Users
+2. Find your user and click "Set custom claims"
+3. Add: {"admin": true}
+
+# Method 2: Use Firebase Functions (after deployment)
+1. Call the setAdminClaim function with your UID
+2. First admin can be set without existing admin permission
+
+# Method 3: Use the provided script (requires service account key)
+node scripts/set-first-admin.js your-email@domain.com
+```
 
 ### **Admin User Setup**
 ```javascript
@@ -206,9 +223,11 @@ FirebaseService.addTicketReply(ticketId, reply)
 ## 🔒 **Security & Permissions**
 
 ### **Admin Access Control**
-- **Email-based**: Only `spendflowapp@gmail.com` can access
-- **Route Protection**: Admin routes require authentication
+- **Custom Claims**: Only users with `admin: true` custom claim can access
+- **Backend Validation**: Firebase Functions validate admin permissions
+- **Route Protection**: Admin routes require authentication + admin claim
 - **Action Confirmation**: Destructive actions require confirmation
+- **Secure**: No frontend-only checks, all validation server-side
 
 ### **Data Protection**
 - **Firebase Rules**: Secure database access

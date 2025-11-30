@@ -40,7 +40,6 @@ export default function AdminTransactionsScreen({ navigation }) {
       setTransactions(transactionsData);
       setStats(transactionStats);
       
-      console.log('Loaded transactions for monitoring:', transactionsData.length);
     } catch (error) {
       console.error('Failed to load transactions:', error);
       setTransactions([]);

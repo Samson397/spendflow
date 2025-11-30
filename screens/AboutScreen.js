@@ -64,9 +64,10 @@ const AboutScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <SEO 
-        title="About SpendFlow | Free Privacy-First Personal Finance App"
-        description="SpendFlow is a free personal finance app that puts you in control. Track spending, manage budgets, and achieve savings goals - all without connecting your bank account."
-        url="https://spedflowapp.web.app/about"
+        title="About SpendFlow | Privacy-First Finance App - No Bank Connections Required"
+        description="SpendFlow is a free, privacy-first personal finance app that puts you in complete control. Track expenses manually, create virtual cards, manage budgets, and achieve savings goals without connecting your bank accounts. Your financial data stays private and secure."
+        keywords="privacy-first finance, no bank connection, manual expense tracking, financial privacy, secure budgeting app, private money management"
+        url="https://spendflow.uk/about"
       />
       <StatusBar style="light" />
       

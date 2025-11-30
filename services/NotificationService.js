@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 // Conditionally import Firebase Messaging only if supported
@@ -20,10 +20,14 @@ const isMessagingSupported = () => {
 
 if (isMessagingSupported()) {
   try {
-    const messaging = require('firebase/messaging');
-    getMessaging = messaging.getMessaging;
-    getToken = messaging.getToken;
-    onMessage = messaging.onMessage;
+    // Use dynamic import with fallback
+    import('firebase/messaging').then(messaging => {
+      getMessaging = messaging.getMessaging;
+      getToken = messaging.getToken;
+      onMessage = messaging.onMessage;
+    }).catch(error => {
+      console.warn('Firebase Messaging not available:', error.message);
+    });
   } catch (error) {
     console.warn('Firebase Messaging not available:', error.message);
   }
@@ -423,9 +427,6 @@ class NotificationService {
   // Check if user has notifications enabled
   async checkUserNotificationSettings(userId) {
     try {
-      const { db } = require('../config/firebase');
-      const { doc, getDoc } = require('firebase/firestore');
-      
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
       

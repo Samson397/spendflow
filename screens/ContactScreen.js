@@ -32,9 +32,10 @@ const ContactScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <SEO 
-        title="Contact Us - SpendFlow | Get Help & Support"
-        description="Get in touch with SpendFlow support team. We're here to help with questions, technical issues, and account setup. Email us directly at spendflowapp@gmail.com."
-        url="https://spedflowapp.web.app/contact"
+        title="Contact SpendFlow Support | Get Help with Your Privacy-First Finance App"
+        description="Need help with SpendFlow? Contact our support team for assistance with virtual cards, budgets, savings goals, or technical issues. Fast, friendly support via email at spendflowapp@gmail.com - we typically respond within 24 hours."
+        keywords="SpendFlow support, finance app help, virtual card support, budget help, technical support, customer service"
+        url="https://spendflow.uk/contact"
       />
       <StatusBar style="light" />
       

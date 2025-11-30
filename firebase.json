@@ -22,7 +22,7 @@
         "headers": [
           {
             "key": "Access-Control-Allow-Origin",
-            "value": "*"
+            "value": "https://spendflow.uk"
           },
           {
             "key": "Access-Control-Allow-Methods",

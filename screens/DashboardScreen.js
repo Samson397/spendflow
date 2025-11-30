@@ -13,8 +13,17 @@ import AIAssistant from '../components/AIAssistant';
 import FirebaseService from '../services/FirebaseService';
 import AnalyticsService from '../services/AnalyticsService';
 import GlobalSearch from '../components/GlobalSearch';
-import { validateTransaction, validateTransfer, showValidationError } from '../utils/ValidationUtils';
+import { 
+  validateTransaction, 
+  validateTransfer, 
+  validateAmount,
+  validateCardSelection,
+  validateDebitFunds,
+  showValidationError 
+} from '../utils/ValidationUtils';
 import { useCustomAlert } from '../contexts/AlertContext';
+import SEO from '../components/SEO';
+import { CATEGORIES } from '../constants/categories';
 
 export default function DashboardScreen({ navigation }) {
   const { theme } = useTheme();
@@ -130,8 +139,16 @@ export default function DashboardScreen({ navigation }) {
       .reduce((sum, t) => sum + Math.abs(parseFloat(String(t.amount).replace(/[^0-9.-]/g, '')) || 0), 0);
     
     const spent = monthlyTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + Math.abs(parseFloat(String(t.amount).replace(/[^0-9.-]/g, '')) || 0), 0);
+      .reduce((sum, t) => {
+        const amount = Math.abs(parseFloat(String(t.amount).replace(/[^0-9.-]/g, '')) || 0);
+        if (t.type === 'refund') {
+          return sum - amount; // Refunds reduce spending
+        } else if (t.type === 'expense') {
+          return sum + amount; // Regular expenses add to spending
+        }
+        // Income transactions are ignored for spending calculation
+        return sum;
+      }, 0);
     
     return { income, spent, saved: income - spent };
   };
@@ -306,8 +323,16 @@ export default function DashboardScreen({ navigation }) {
     userTransactions.forEach(t => {
       if (t.category && t.amount) {
         const amount = Math.abs(parseFloat(t.amount.replace(/[^0-9.-]/g, '')));
-        if (!isNaN(amount) && t.amount.startsWith('-')) {
-          categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amount;
+        if (!isNaN(amount)) {
+          // Handle different transaction types
+          if (t.type === 'refund') {
+            // Refunds reduce spending in their category
+            categoryTotals[t.category] = (categoryTotals[t.category] || 0) - amount;
+          } else if (t.amount.startsWith('-')) {
+            // Regular expenses add to spending
+            categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amount;
+          }
+          // Income transactions are ignored for spending analysis
         }
       }
     });
@@ -365,16 +390,30 @@ export default function DashboardScreen({ navigation }) {
     const thisWeekSpending = userTransactions
       .filter(t => {
         const date = new Date(t.date);
-        return date >= thisWeekStart && t.amount?.startsWith('-');
+        return date >= thisWeekStart && (t.amount?.startsWith('-') || t.type === 'refund');
       })
-      .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount.replace(/[^0-9.-]/g, ''))), 0);
+      .reduce((sum, t) => {
+        const amount = Math.abs(parseFloat(t.amount.replace(/[^0-9.-]/g, '')));
+        if (t.type === 'refund') {
+          return sum - amount; // Refunds reduce spending
+        } else {
+          return sum + amount; // Regular expenses add to spending
+        }
+      }, 0);
     
     const lastWeekSpending = userTransactions
       .filter(t => {
         const date = new Date(t.date);
-        return date >= lastWeekStart && date <= lastWeekEnd && t.amount?.startsWith('-');
+        return date >= lastWeekStart && date <= lastWeekEnd && (t.amount?.startsWith('-') || t.type === 'refund');
       })
-      .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount.replace(/[^0-9.-]/g, ''))), 0);
+      .reduce((sum, t) => {
+        const amount = Math.abs(parseFloat(t.amount.replace(/[^0-9.-]/g, '')));
+        if (t.type === 'refund') {
+          return sum - amount; // Refunds reduce spending
+        } else {
+          return sum + amount; // Regular expenses add to spending
+        }
+      }, 0);
     
     if (lastWeekSpending === 0) return { trend: 'stable', percentage: 0 };
     
@@ -619,26 +658,74 @@ export default function DashboardScreen({ navigation }) {
     try {
       const { card: selectedCard, amount: expenseAmount } = validation;
       
+      if (!selectedCard || !selectedCard.id) {
+        throw new Error('No valid card selected for transaction');
+      }
+      
+      // Ensure cardId is always a string
+      const cardId = String(selectedCard.id);
+      
       const transactionData = {
         type: 'expense',
         amount: `-${currency.symbol}${transactionForm.amount}`,
+        amountValue: -Math.abs(parseFloat(transactionForm.amount)), // Store numeric value for calculations
         category: transactionForm.category,
         description: transactionForm.description || 'Expense',
         date: new Date().toISOString(),
         time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-        cardId: transactionForm.card,
-        cardName: selectedCard ? `${selectedCard.bank} ****${selectedCard.lastFour}` : ''
+        cardId: cardId,
+        cardName: selectedCard ? `${selectedCard.bank} ****${selectedCard.lastFour}` : '',
+        transactionType: 'expense', // Explicitly set transaction type
+        createdAt: new Date().toISOString()
       };
+
+      console.log('Saving expense transaction:', transactionData);
 
       if (user?.uid) {
         // Save transaction
-        await FirebaseService.addTransaction(user.uid, transactionData);
+        const result = await FirebaseService.addTransaction(user.uid, transactionData);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save transaction');
+        }
         
         // Update card balance (decrease for expense)
         if (selectedCard) {
-          const newBalance = (selectedCard.balance || 0) - expenseAmount;
-          await FirebaseService.updateCard(user.uid, transactionForm.card, { balance: newBalance });
+          const currentBalance = typeof selectedCard.balance === 'number' ? selectedCard.balance : 
+                              parseFloat(String(selectedCard.balance || '0').replace(/[^0-9.-]+/g, ''));
+          const newBalance = currentBalance - Math.abs(expenseAmount);
+          
+          console.log(`Updating card ${cardId} balance: ${currentBalance} -> ${newBalance}`);
+          
+          const updateResult = await FirebaseService.updateCard(user.uid, cardId, { 
+            balance: newBalance,
+            updatedAt: new Date().toISOString()
+          });
+          
+          if (!updateResult.success) {
+            console.error('Failed to update card balance:', updateResult.error);
+            // Don't throw here, as the transaction was saved successfully
+          }
         }
+        
+        // Refresh transactions for this card
+        if (cardId) {
+          console.log('Refreshing transactions for card:', cardId);
+          const transactionsResult = await FirebaseService.getCardTransactions(user.uid, cardId);
+          if (transactionsResult.success) {
+            setTransactions(transactionsResult.data || []);
+          }
+        }
+        
+        // Show success message and reset form
+        showAlert('Success', 'Expense added successfully');
+        setTransactionForm({
+          amount: '',
+          category: '',
+          description: '',
+          card: '',
+          date: new Date().toISOString()
+        });
       }
 
       AnalyticsService.trackAddTransaction('expense', transactionForm.category, expenseAmount);
@@ -664,41 +751,93 @@ export default function DashboardScreen({ navigation }) {
 
     try {
       const incomeAmount = parseFloat(incomeForm.amount);
+      if (isNaN(incomeAmount) || incomeAmount <= 0) {
+        throw new Error('Please enter a valid amount');
+      }
+      
       const selectedCard = userCards.find(c => c.id === incomeForm.account);
+      if (!selectedCard) {
+        throw new Error('Selected account not found');
+      }
+      
+      // Ensure cardId is always a string
+      const cardId = String(selectedCard.id);
       
       const transactionData = {
         type: 'income',
         amount: `+${currency.symbol}${incomeForm.amount}`,
+        amountValue: Math.abs(incomeAmount), // Store numeric value for calculations
         category: incomeForm.source,
         description: incomeForm.description || 'Income',
         date: new Date().toISOString(),
         time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-        cardId: incomeForm.account,
-        cardName: selectedCard ? `${selectedCard.bank} ****${selectedCard.lastFour}` : ''
+        cardId: cardId,
+        cardName: `${selectedCard.bank} ****${selectedCard.lastFour}`,
+        transactionType: 'income', // Explicitly set transaction type
+        createdAt: new Date().toISOString()
       };
+
+      console.log('Saving income transaction:', transactionData);
 
       if (user?.uid) {
         // Save transaction
-        await FirebaseService.addTransaction(user.uid, transactionData);
+        const result = await FirebaseService.addTransaction(user.uid, transactionData);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save income transaction');
+        }
         
         // Update card balance (increase for income)
-        if (selectedCard) {
-          const newBalance = (selectedCard.balance || 0) + incomeAmount;
-          const updateResult = await FirebaseService.updateCard(user.uid, incomeForm.account, { balance: newBalance });
-          if (!updateResult.success) {
-            console.error('Failed to update card balance:', updateResult.error);
-            Alert.alert('Warning', 'Income transaction recorded, but card balance update failed. Please refresh to see updated balance.');
-            return; // Don't show success if balance update failed
+        const currentBalance = typeof selectedCard.balance === 'number' ? selectedCard.balance : 
+                            parseFloat(String(selectedCard.balance || '0').replace(/[^0-9.-]+/g, ''));
+        const newBalance = currentBalance + incomeAmount;
+        
+        console.log(`Updating card ${cardId} balance: ${currentBalance} -> ${newBalance}`);
+        
+        const updateResult = await FirebaseService.updateCard(user.uid, cardId, { 
+          balance: newBalance,
+          updatedAt: new Date().toISOString()
+        });
+        
+        if (!updateResult.success) {
+          console.error('Failed to update card balance:', updateResult.error);
+          // Don't throw here, as the transaction was saved successfully
+        }
+        
+        // Refresh transactions for this card
+        console.log('Refreshing transactions for card:', cardId);
+        const transactionsResult = await FirebaseService.getCardTransactions(user.uid, cardId);
+        if (transactionsResult.success) {
+          // Update local state if we're on the card view for this card
+          if (route.name === 'ViewCard' && route.params?.card?.id === cardId) {
+            setTransactions(transactionsResult.data || []);
           }
         }
+        
+        // Show success message and reset form
+        Alert.alert(
+          'Success', 
+          `Income of ${currency.symbol}${incomeAmount.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          })} added to ${selectedCard.bank} account`
+        );
+        
+        setIncomeModalVisible(false);
+        setIncomeForm({ 
+          amount: '', 
+          source: '', 
+          description: '', 
+          account: '', 
+          date: new Date().toISOString() 
+        });
+        
+        // Track the income
+        AnalyticsService.trackAddTransaction('income', incomeForm.source, incomeAmount);
       }
-
-      AnalyticsService.trackAddTransaction('income', incomeForm.source, incomeAmount);
-      Alert.alert('Success', `Income of ${currency.symbol}${incomeAmount.toLocaleString()} added to ${selectedCard?.bank || 'account'}`);
-      setIncomeModalVisible(false);
-      setIncomeForm({ amount: '', source: '', description: '', account: '', date: new Date().toISOString() });
     } catch (error) {
-      Alert.alert('Error', 'Failed to add income');
+      console.error('Error adding income:', error);
+      Alert.alert('Error', error.message || 'Failed to add income');
     }
   };
 
@@ -798,57 +937,141 @@ export default function DashboardScreen({ navigation }) {
   };
 
   const handleAddTransfer = async () => {
-    // Comprehensive transfer validation
-    const validation = validateTransfer({
-      amount: transferForm.amount,
-      fromCardId: transferForm.fromAccount,
-      toCardId: transferForm.toAccount,
-      userCards: userCards,
-      currency: currency.symbol
-    });
-
-    // Show error if validation failed
-    if (!validation.valid) {
-      showAlert(validation.title, validation.message);
+    const amountValidation = validateAmount(transferForm.amount);
+    if (!amountValidation.valid) {
+      showAlert(amountValidation.title, amountValidation.message);
       return;
     }
 
-    try {
-      const { fromCard, toCard, amount: transferAmount } = validation;
-      
-      const transactionData = {
-        type: 'transfer',
-        amount: `${currency.symbol}${transferForm.amount}`,
-        category: 'Transfer',
-        description: transferForm.note || `Transfer to ${toCard?.bank || 'account'}`,
-        date: new Date().toISOString(),
-        time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-        fromCardId: transferForm.fromAccount,
-        toCardId: transferForm.toAccount,
-        fromCardName: fromCard ? `${fromCard.bank} ****${fromCard.lastFour}` : '',
-        toCardName: toCard ? `${toCard.bank} ****${toCard.lastFour}` : ''
-      };
+    const transferType = transferForm.transferType || 'internal';
+    const transferAmount = amountValidation.parsed;
 
-      if (user?.uid) {
-        // Save transaction
-        await FirebaseService.addTransaction(user.uid, transactionData);
-        
-        // Update source card balance (decrease)
-        if (fromCard) {
-          const newFromBalance = (fromCard.balance || 0) - transferAmount;
-          await FirebaseService.updateCard(user.uid, transferForm.fromAccount, { balance: newFromBalance });
+    try {
+      if (transferType === 'internal') {
+        const validation = validateTransfer({
+          amount: transferForm.amount,
+          fromCardId: transferForm.fromAccount,
+          toCardId: transferForm.toAccount,
+          userCards: userCards,
+          currency: currency.symbol
+        });
+
+        if (!validation.valid) {
+          showAlert(validation.title, validation.message);
+          return;
         }
-        
-        // Update destination card balance (increase)
-        if (toCard) {
+
+        const { fromCard, toCard } = validation;
+
+        const transactionData = {
+          type: 'transfer',
+          transferSubtype: 'internal',
+          amount: `${currency.symbol}${transferForm.amount}`,
+          category: 'Transfer',
+          description: transferForm.note || `Transfer to ${toCard?.bank || 'account'}`,
+          date: new Date().toISOString(),
+          time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+          fromCardId: transferForm.fromAccount,
+          toCardId: transferForm.toAccount,
+          fromCardName: fromCard ? `${fromCard.bank} ****${fromCard.lastFour}` : '',
+          toCardName: toCard ? `${toCard.bank} ****${toCard.lastFour}` : ''
+        };
+
+        if (user?.uid) {
+          await FirebaseService.addTransaction(user.uid, transactionData);
+
+          if (fromCard) {
+            const newFromBalance = (fromCard.balance || 0) - transferAmount;
+            await FirebaseService.updateCard(user.uid, transferForm.fromAccount, { balance: newFromBalance });
+          }
+
+          if (toCard) {
+            const newToBalance = (toCard.balance || 0) + transferAmount;
+            await FirebaseService.updateCard(user.uid, transferForm.toAccount, { balance: newToBalance });
+          }
+        }
+      } else if (transferType === 'incoming') {
+        if (!transferForm.externalSource?.trim()) {
+          showAlert('Missing Information', 'Please specify who sent the money.');
+          return;
+        }
+
+        const toCardValidation = validateCardSelection(transferForm.toAccount, userCards);
+        if (!toCardValidation.valid) {
+          showAlert(toCardValidation.title, 'Please select the account receiving the funds.');
+          return;
+        }
+
+        const toCard = toCardValidation.card;
+        const transactionData = {
+          type: 'transfer',
+          transferSubtype: 'incoming',
+          amount: `+${currency.symbol}${transferForm.amount}`,
+          category: 'Transfer',
+          description: transferForm.note || `Incoming transfer from ${transferForm.externalSource}`,
+          date: new Date().toISOString(),
+          time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+          toCardId: transferForm.toAccount,
+          toCardName: `${toCard.bank} ****${toCard.lastFour}`,
+          externalSource: transferForm.externalSource
+        };
+
+        if (user?.uid) {
+          await FirebaseService.addTransaction(user.uid, transactionData);
           const newToBalance = (toCard.balance || 0) + transferAmount;
           await FirebaseService.updateCard(user.uid, transferForm.toAccount, { balance: newToBalance });
+        }
+      } else {
+        if (!transferForm.externalDestination?.trim()) {
+          showAlert('Missing Information', 'Please specify where you are sending the money.');
+          return;
+        }
+
+        const fromCardValidation = validateCardSelection(transferForm.fromAccount, userCards);
+        if (!fromCardValidation.valid) {
+          showAlert(fromCardValidation.title, 'Please select the account you are sending from.');
+          return;
+        }
+
+        const fromCard = fromCardValidation.card;
+        const fundsValidation = validateDebitFunds(fromCard, transferAmount, currency.symbol);
+        if (!fundsValidation.valid) {
+          showAlert(fundsValidation.title, fundsValidation.message);
+          return;
+        }
+
+        const transactionData = {
+          type: 'transfer',
+          transferSubtype: 'outgoing',
+          amount: `-${currency.symbol}${transferForm.amount}`,
+          category: 'Transfer',
+          description: transferForm.note || `Transfer to ${transferForm.externalDestination}`,
+          date: new Date().toISOString(),
+          time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+          fromCardId: transferForm.fromAccount,
+          fromCardName: `${fromCard.bank} ****${fromCard.lastFour}`,
+          externalDestination: transferForm.externalDestination
+        };
+
+        if (user?.uid) {
+          await FirebaseService.addTransaction(user.uid, transactionData);
+          const newFromBalance = (fromCard.balance || 0) - transferAmount;
+          await FirebaseService.updateCard(user.uid, transferForm.fromAccount, { balance: newFromBalance });
         }
       }
 
       Alert.alert('Success', 'Transfer completed successfully');
       setTransferModalVisible(false);
-      setTransferForm({ amount: '', fromAccount: '', toAccount: '', note: '', date: new Date().toISOString() });
+      setTransferForm({ 
+        amount: '', 
+        fromAccount: '', 
+        toAccount: '', 
+        note: '', 
+        date: new Date().toISOString(),
+        transferType: 'internal',
+        externalSource: '',
+        externalDestination: ''
+      });
     } catch (error) {
       Alert.alert('Error', 'Failed to complete transfer');
     }
@@ -898,7 +1121,7 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.notificationButton}
-              onPress={() => navigation.navigate('NotificationCenter')}
+              onPress={() => navigation.navigate('UnifiedNotificationCenter')}
             >
               <Text style={styles.notificationIcon}>🔔</Text>
               {unreadNotifications > 0 && (
@@ -917,7 +1140,7 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-        {/* Action Button */}
+        {/* Action Buttons */}
         <View style={styles.actionsSection}>
           <TouchableOpacity 
             style={[styles.actionButton, styles.aiButton, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}
@@ -1420,17 +1643,7 @@ export default function DashboardScreen({ navigation }) {
                 
                 {categoryDropdownVisible && (
                   <View style={[styles.dropdownList, { backgroundColor: theme.cardBg, borderColor: theme.textSecondary + '30' }]}>
-                    {[
-                      { emoji: '🛒', name: 'Groceries' },
-                      { emoji: '☕', name: 'Food & Drink' },
-                      { emoji: '🚇', name: 'Transport' },
-                      { emoji: '🛍️', name: 'Shopping' },
-                      { emoji: '🎬', name: 'Entertainment' },
-                      { emoji: '📄', name: 'Bills' },
-                      { emoji: '🏥', name: 'Health' },
-                      { emoji: '🏠', name: 'Home' },
-                      { emoji: '💳', name: 'Other' },
-                    ].map((cat) => (
+                    {CATEGORIES.map((cat) => (
                       <TouchableOpacity 
                         key={cat.name}
                         style={[
@@ -2792,6 +3005,47 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  
+  // Social Finance Styles
+  socialFinanceSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  socialFinanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  socialFinanceCard: {
+    width: '48%',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  socialFinanceIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  socialFinanceTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  socialFinanceSubtitle: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   
   // Total Balance Card Styles

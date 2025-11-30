@@ -69,6 +69,8 @@ export default function MobileMenu({
     { id: 'Goals', emoji: '🎯', title: 'Goals', screen: 'Goals' },
     { id: 'Budget', emoji: '💵', title: 'Budgets', screen: 'Budget' },
     { id: 'Reports', emoji: '📈', title: 'Reports', screen: 'Reports' },
+    { id: 'Connections', emoji: '👥', title: 'Connections', screen: 'Connections' },
+    { id: 'PaymentRequests', emoji: '💸', title: 'Request Payment', screen: 'PaymentRequests' },
     { id: 'CommunityTips', emoji: '💡', title: 'Community Tips', screen: 'CommunityTips' },
     { id: 'Leaderboard', emoji: '🏆', title: 'Leaderboard', screen: 'Leaderboard' }
   ];

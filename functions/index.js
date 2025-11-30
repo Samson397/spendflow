@@ -6,9 +6,71 @@ const nodemailer = require("nodemailer");
 // Initialize Firebase Admin
 admin.initializeApp();
 
+// Set admin custom claims (call this once to make a user admin)
+exports.setAdminClaim = functions.https.onCall(async (data, context) => {
+  // Only allow if called by an existing admin or if no admins exist yet
+  const { uid } = data;
+  
+  if (!uid) {
+    throw new functions.https.HttpsError('invalid-argument', 'UID is required');
+  }
+
+  try {
+    // Check if any admin exists
+    const listUsersResult = await admin.auth().listUsers();
+    const existingAdmins = [];
+    
+    for (const user of listUsersResult.users) {
+      if (user.customClaims && user.customClaims.admin === true) {
+        existingAdmins.push(user);
+      }
+    }
+
+    // If no admins exist, allow creating the first admin
+    // Otherwise, require the caller to be an admin
+    if (existingAdmins.length > 0) {
+      if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Only admins can create new admins');
+      }
+    }
+
+    // Set admin custom claim
+    await admin.auth().setCustomUserClaims(uid, { admin: true });
+    
+    return { success: true, message: 'Admin claim set successfully' };
+  } catch (error) {
+    console.error('Error setting admin claim:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to set admin claim');
+  }
+});
+
+// Remove admin custom claims
+exports.removeAdminClaim = functions.https.onCall(async (data, context) => {
+  // Only allow if called by an admin
+  if (!context.auth || !context.auth.token.admin) {
+    throw new functions.https.HttpsError('permission-denied', 'Only admins can remove admin access');
+  }
+
+  const { uid } = data;
+  
+  if (!uid) {
+    throw new functions.https.HttpsError('invalid-argument', 'UID is required');
+  }
+
+  try {
+    // Remove admin custom claim
+    await admin.auth().setCustomUserClaims(uid, { admin: false });
+    
+    return { success: true, message: 'Admin claim removed successfully' };
+  } catch (error) {
+    console.error('Error removing admin claim:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to remove admin claim');
+  }
+});
+
 // Gmail transporter configuration
 const createGmailTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: functions.config().gmail.email,
@@ -19,10 +81,22 @@ const createGmailTransporter = () => {
 
 // Main email sending function
 exports.sendEmail = functions.https.onRequest(async (req, res) => {
-  // Enable CORS for all requests
-  res.set("Access-Control-Allow-Origin", "*");
+  // Enable CORS for specific domains only
+  const allowedOrigins = [
+    "https://spendflow.uk",
+    "https://spendflow.app",
+    "https://www.spendflow.uk",
+    "https://www.spendflow.app"
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.set("Access-Control-Allow-Origin", origin);
+  }
+  
   res.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.set("Access-Control-Allow-Credentials", "true");
 
   // Handle preflight OPTIONS request
   if (req.method === "OPTIONS") {
@@ -36,7 +110,7 @@ exports.sendEmail = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const {to, from, subject, html, text} = req.body;
+    const {to, subject, html, text, fromName, replyTo} = req.body;
 
     if (!to || !subject || (!html && !text)) {
       res.status(400).json({
@@ -49,7 +123,8 @@ exports.sendEmail = functions.https.onRequest(async (req, res) => {
     const transporter = createGmailTransporter();
 
     const mailOptions = {
-      from: from || "SpendFlow <spendflowapp@gmail.com>",
+      from: `${fromName || "SpendFlow"} <${functions.config().gmail.email}>`,
+      replyTo: replyTo || functions.config().gmail.email,
       to: to,
       subject: subject,
       html: html,

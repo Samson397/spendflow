@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../contexts/AuthContext';
 import CustomAlert from '../components/CustomAlert';
+import SEO from '../components/SEO';
 
 // Web-compatible alert function
 const showAlert = (title, message) => {
@@ -78,6 +80,13 @@ export default function SignInScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <SEO 
+        title="Sign In - SpendFlow | Access Your Private Finance Dashboard"
+        description="Sign in to your SpendFlow account to manage virtual cards, track expenses manually, monitor budgets, and stay on top of your savings goals in a fully privacy-first finance app."
+        keywords="SpendFlow sign in, login, finance app login, budget tracker login, privacy-first finance login"
+        url="https://spendflow.uk/signin"
+        noIndex={true}
+      />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <LinearGradient
           colors={['#667eea', '#764ba2']}
@@ -105,7 +114,7 @@ export default function SignInScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="you@example.com"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={email}
                 onChangeText={(text) => { setEmail(text); setErrorMessage(''); }}
                 keyboardType="email-address"
@@ -119,7 +128,7 @@ export default function SignInScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="Enter your password"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={password}
                 onChangeText={(text) => { setPassword(text); setErrorMessage(''); }}
                 secureTextEntry
@@ -166,7 +175,7 @@ export default function SignInScreen({ navigation }) {
                   <ActivityIndicator color="#667eea" />
                 ) : (
                   <>
-                    <Text style={styles.googleIcon}>🔍</Text>
+                    <Ionicons name="logo-google" size={20} color="#4285F4" />
                     <Text style={styles.socialButtonText}>Continue with Google</Text>
                   </>
                 )}

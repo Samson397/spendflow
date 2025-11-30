@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-
-const { width } = Dimensions.get('window');
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const Header = ({ navigation, currentPage = 'home' }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const showDesktopNav = width >= 1024;
+  const styles = useMemo(() => createStyles(width), [width]);
 
   const navItems = [
     { name: 'Home', route: 'Landing', key: 'home' },
@@ -19,7 +22,7 @@ const Header = ({ navigation, currentPage = 'home' }) => {
   return (
     <LinearGradient
       colors={['#667eea', '#764ba2']}
-      style={styles.header}
+      style={[styles.header, { paddingTop: insets.top }]}
     >
       <View style={styles.container}>
         {/* Logo */}
@@ -31,7 +34,7 @@ const Header = ({ navigation, currentPage = 'home' }) => {
         </TouchableOpacity>
 
         {/* Desktop Navigation */}
-        {width > 768 && (
+        {showDesktopNav && (
           <View style={styles.nav}>
             {navItems.map((item) => (
               <TouchableOpacity
@@ -58,19 +61,23 @@ const Header = ({ navigation, currentPage = 'home' }) => {
           <TouchableOpacity
             onPress={() => navigation.navigate('SignIn')}
             style={styles.signInBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Sign In to your account"
           >
             <Text style={styles.signInText}>Sign In</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => navigation.navigate('SignUp')}
             style={styles.signUpBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Get Started - Create new account"
           >
             <Text style={styles.signUpText}>Get Started</Text>
           </TouchableOpacity>
         </View>
 
         {/* Mobile Menu Button */}
-        {width <= 768 && (
+        {!showDesktopNav && (
           <TouchableOpacity
             onPress={() => setMenuOpen(!menuOpen)}
             style={styles.menuButton}
@@ -81,7 +88,7 @@ const Header = ({ navigation, currentPage = 'home' }) => {
       </View>
 
       {/* Mobile Menu */}
-      {menuOpen && width <= 768 && (
+      {menuOpen && !showDesktopNav && (
         <View style={styles.mobileMenu}>
           {navItems.map((item) => (
             <TouchableOpacity
@@ -101,7 +108,7 @@ const Header = ({ navigation, currentPage = 'home' }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (width) => StyleSheet.create({
   header: {
     paddingTop: Platform.OS === 'web' ? 0 : 40,
     paddingBottom: 0,
@@ -112,21 +119,21 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   container: {
-    flexDirection: 'row',
+    flexDirection: width >= 1024 ? 'row' : 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: width >= 1024 ? 32 : 16,
+    paddingVertical: 12,
     maxWidth: 1200,
     width: '100%',
     alignSelf: 'center',
   },
   logo: {
     flexShrink: 0,
-    marginRight: 20,
+    marginRight: width >= 1024 ? 20 : 0,
   },
   logoText: {
-    fontSize: 24,
+    fontSize: width >= 1024 ? 24 : 20,
     fontWeight: 'bold',
     color: '#ffffff',
     whiteSpace: 'nowrap',
@@ -134,7 +141,7 @@ const styles = StyleSheet.create({
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 32,
+    gap: 24,
     flex: 1,
     justifyContent: 'center',
   },
@@ -156,58 +163,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   ctaContainer: {
-    flexDirection: 'row',
+    flexDirection: width >= 640 ? 'row' : 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: width >= 640 ? 12 : 8,
   },
   signInBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingHorizontal: width >= 640 ? 16 : 12,
     borderRadius: 6,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
   },
   signInText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: width >= 640 ? 16 : 14,
     fontWeight: '500',
   },
   signUpBtn: {
     backgroundColor: '#ffffff',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 25,
+    paddingVertical: width >= 640 ? 8 : 6,
+    paddingHorizontal: width >= 640 ? 20 : 12,
+    borderRadius: width >= 640 ? 25 : 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    alignItems: 'center',
   },
   signUpText: {
     color: '#667eea',
-    fontSize: 16,
+    fontSize: width >= 640 ? 16 : 14,
     fontWeight: '600',
   },
   menuButton: {
-    padding: 8,
+    padding: 12,
+    borderRadius: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
   },
   menuIcon: {
-    color: '#ffffff',
     fontSize: 24,
+    color: '#ffffff',
   },
   mobileMenu: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    backgroundColor: 'rgba(102, 126, 234, 0.95)',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    width: '100%',
+    gap: 8,
   },
   mobileNavItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minHeight: 48,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   mobileNavText: {
+    fontSize: 18,
     color: '#ffffff',
-    fontSize: 16,
     fontWeight: '500',
   },
 });
 
 export default Header;
+

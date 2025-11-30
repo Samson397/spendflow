@@ -28,11 +28,14 @@ export const testFirebaseConnection = async () => {
       const currentUser = auth.currentUser;
       console.log('🔐 Auth state:', currentUser ? 'Signed in' : 'Signed out');
       
-      // Test auth connection by checking auth domain
+      // Test auth connection by checking auth domain (without exposing full config)
       const authDomain = auth.config.authDomain;
       if (authDomain) {
         results.auth = true;
-        console.log('✅ Firebase Auth connected:', authDomain);
+        console.log('✅ Auth connection established');
+      } else {
+        results.errors.push('Auth domain not found');
+        console.error('❌ Auth connection failed');
       }
     } catch (authError) {
       results.errors.push(`Auth error: ${authError.message}`);
@@ -68,13 +71,19 @@ export const testFirebaseConnection = async () => {
   return results;
 };
 
-// Quick test function for debugging
+// Quick test function for debugging (development only)
 export const quickFirebaseTest = () => {
+  if (process.env.NODE_ENV !== 'development') {
+    console.log('🔥 Firebase Quick Test - Development Only');
+    return { status: 'disabled' };
+  }
+  
   console.log('🔥 Firebase Quick Test');
   console.log('Auth object:', !!auth);
   console.log('Firestore object:', !!db);
-  console.log('Auth domain:', auth?.config?.authDomain);
-  console.log('Project ID:', db?.app?.options?.projectId);
+  // Security: Don't log sensitive config details
+  console.log('Auth connection:', auth?.config?.authDomain ? '✅' : '❌');
+  console.log('Firestore connection:', db?.app?.options?.projectId ? '✅' : '❌');
   
   return {
     authExists: !!auth,

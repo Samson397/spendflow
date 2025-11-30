@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../contexts/AuthContext';
+import SEO from '../components/SEO';
 
 // Web-compatible alert function
 const showAlert = (title, message) => {
@@ -96,6 +98,13 @@ export default function SignUpScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <SEO 
+        title="Create Account - SpendFlow | Free Privacy-First Finance App"
+        description="Create your free SpendFlow account to track expenses manually, manage virtual cards, build budgets, and set savings goals with complete privacy and no bank connections."
+        keywords="SpendFlow sign up, create account, free finance app, budget tracker registration, privacy-first finance app"
+        url="https://spendflow.uk/signup"
+        noIndex={true}
+      />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <LinearGradient
           colors={['#667eea', '#764ba2']}
@@ -123,7 +132,7 @@ export default function SignUpScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="John Doe"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={name}
                 onChangeText={setName}
                 autoCapitalize="words"
@@ -136,7 +145,7 @@ export default function SignUpScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="you@example.com"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -150,7 +159,7 @@ export default function SignUpScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="Create a strong password"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -163,7 +172,7 @@ export default function SignUpScreen({ navigation }) {
               <TextInput
                 style={styles.input}
                 placeholder="Re-enter your password"
-                placeholderTextColor="#a0aec0"
+                placeholderTextColor="#6b7280"
                 value={confirmPassword}
                 onChangeText={(text) => { setConfirmPassword(text); setErrorMessage(''); }}
                 secureTextEntry
@@ -225,7 +234,7 @@ export default function SignUpScreen({ navigation }) {
                   <ActivityIndicator color="#667eea" />
                 ) : (
                   <>
-                    <Text style={styles.googleIcon}>🔍</Text>
+                    <Ionicons name="logo-google" size={20} color="#4285F4" />
                     <Text style={styles.socialButtonText}>Sign up with Google</Text>
                   </>
                 )}

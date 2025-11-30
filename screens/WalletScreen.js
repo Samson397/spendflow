@@ -156,6 +156,10 @@ export default function WalletScreen({ navigation }) {
   };
   
   const closeDebitCardModal = () => {
+    // Blur any focused input to prevent accessibility warnings
+    if (typeof document !== 'undefined') {
+      document.activeElement?.blur();
+    }
     setDebitCardModalVisible(false);
     setBankName('');
     setLastFourDigits('');
@@ -169,6 +173,10 @@ export default function WalletScreen({ navigation }) {
   };
   
   const closeCreditCardModal = () => {
+    // Blur any focused input to prevent accessibility warnings
+    if (typeof document !== 'undefined') {
+      document.activeElement?.blur();
+    }
     setCreditCardModalVisible(false);
     setCreditBankName('');
     setCreditCardName('');
@@ -487,7 +495,15 @@ export default function WalletScreen({ navigation }) {
                 pressed && { opacity: 0.8 }
               ]}
               onPress={() => {
-                navigation.navigate('ViewCard', { card });
+                if (!card || !card.id) {
+                  Alert.alert('Error', 'Unable to view card details. Please try again.');
+                  return;
+                }
+                navigation.navigate('ViewCard', { 
+                  cardId: card.id,
+                  card: card, // Still pass the full card object for immediate display
+                  availableCards: cards
+                });
               }}
             >
               <LinearGradient

@@ -26,6 +26,14 @@ export default function GlobalSearch({ visible, onClose, navigation, transaction
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ screens: [], transactions: [], cards: [] });
 
+  // Safe theme fallback
+  const safeTheme = theme || {
+    cardBg: '#FFFFFF',
+    background: ['#F2F2F7', '#F2F2F7'],
+    textSecondary: '#6B7280',
+    text: '#1C1C1E',
+  };
+
   const search = useCallback((q) => {
     if (!q.trim()) {
       setResults({ screens: [], transactions: [], cards: [] });
@@ -77,32 +85,32 @@ export default function GlobalSearch({ visible, onClose, navigation, transaction
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.container, { backgroundColor: theme.cardBg }]} onStartShouldSetResponder={() => true}>
-          <View style={[styles.searchBox, { backgroundColor: theme.background[0], borderColor: theme.textSecondary + '30' }]}>
+        <View style={[styles.container, { backgroundColor: safeTheme.cardBg }]} onStartShouldSetResponder={() => true}>
+          <View style={[styles.searchBox, { backgroundColor: safeTheme.background[0], borderColor: safeTheme.textSecondary + '30' }]}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
-              style={[styles.input, { color: theme.text }]}
+              style={[styles.input, { color: safeTheme.text }]}
               placeholder="Search screens, transactions, cards..."
-              placeholderTextColor={theme.textSecondary}
+              placeholderTextColor={safeTheme.textSecondary}
               value={query}
               onChangeText={setQuery}
               autoFocus
             />
             {query.length > 0 && (
               <TouchableOpacity onPress={() => setQuery('')}>
-                <Text style={{ color: theme.textSecondary, fontSize: 18 }}>✕</Text>
+                <Text style={{ color: safeTheme.textSecondary, fontSize: 18 }}>✕</Text>
               </TouchableOpacity>
             )}
           </View>
 
           {!query && (
             <View style={styles.hints}>
-              <Text style={[styles.hintTitle, { color: theme.text }]}>Quick Navigation</Text>
+              <Text style={[styles.hintTitle, { color: safeTheme.text }]}>Quick Navigation</Text>
               <View style={styles.quickLinks}>
                 {SCREENS.slice(0, 8).map(s => (
-                  <TouchableOpacity key={s.route} style={[styles.quickLink, { backgroundColor: theme.background[0] }]} onPress={() => handleSelect('screen', s)}>
+                  <TouchableOpacity key={s.route} style={[styles.quickLink, { backgroundColor: safeTheme.background[0] }]} onPress={() => handleSelect('screen', s)}>
                     <Text style={styles.quickIcon}>{s.icon}</Text>
-                    <Text style={[styles.quickName, { color: theme.text }]}>{s.name}</Text>
+                    <Text style={[styles.quickName, { color: safeTheme.text }]}>{s.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -112,7 +120,7 @@ export default function GlobalSearch({ visible, onClose, navigation, transaction
           {query && !hasResults && (
             <View style={styles.noResults}>
               <Text style={styles.noResultsEmoji}>🔎</Text>
-              <Text style={[styles.noResultsText, { color: theme.textSecondary }]}>No results for "{query}"</Text>
+              <Text style={[styles.noResultsText, { color: safeTheme.textSecondary }]}>No results for "{query}"</Text>
             </View>
           )}
 
@@ -127,33 +135,33 @@ export default function GlobalSearch({ visible, onClose, navigation, transaction
               renderItem={({ item: r }) => {
                 if (r.type === 'screen') {
                   return (
-                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: theme.background[0] }]} onPress={() => handleSelect('screen', r.item)}>
+                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: safeTheme.background[0] }]} onPress={() => handleSelect('screen', r.item)}>
                       <Text style={styles.resultIcon}>{r.item.icon}</Text>
                       <View style={styles.resultInfo}>
-                        <Text style={[styles.resultTitle, { color: theme.text }]}>{r.item.name}</Text>
-                        <Text style={[styles.resultSub, { color: theme.textSecondary }]}>Screen</Text>
+                        <Text style={[styles.resultTitle, { color: safeTheme.text }]}>{r.item.name}</Text>
+                        <Text style={[styles.resultSub, { color: safeTheme.textSecondary }]}>Screen</Text>
                       </View>
                     </TouchableOpacity>
                   );
                 }
                 if (r.type === 'card') {
                   return (
-                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: theme.background[0] }]} onPress={() => handleSelect('card', r.item)}>
+                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: safeTheme.background[0] }]} onPress={() => handleSelect('card', r.item)}>
                       <Text style={styles.resultIcon}>💳</Text>
                       <View style={styles.resultInfo}>
-                        <Text style={[styles.resultTitle, { color: theme.text }]}>{r.item.bank} •••• {r.item.lastFour}</Text>
-                        <Text style={[styles.resultSub, { color: theme.textSecondary }]}>Card</Text>
+                        <Text style={[styles.resultTitle, { color: safeTheme.text }]}>{r.item.bank} •••• {r.item.lastFour}</Text>
+                        <Text style={[styles.resultSub, { color: safeTheme.textSecondary }]}>Card</Text>
                       </View>
                     </TouchableOpacity>
                   );
                 }
                 if (r.type === 'transaction') {
                   return (
-                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: theme.background[0] }]} onPress={() => handleSelect('transaction', r.item)}>
+                    <TouchableOpacity style={[styles.resultItem, { borderBottomColor: safeTheme.background[0] }]} onPress={() => handleSelect('transaction', r.item)}>
                       <Text style={styles.resultIcon}>📝</Text>
                       <View style={styles.resultInfo}>
-                        <Text style={[styles.resultTitle, { color: theme.text }]}>{r.item.description || r.item.merchant || 'Transaction'}</Text>
-                        <Text style={[styles.resultSub, { color: theme.textSecondary }]}>{r.item.category} • {r.item.amount}</Text>
+                        <Text style={[styles.resultTitle, { color: safeTheme.text }]}>{r.item.description || r.item.merchant || 'Transaction'}</Text>
+                        <Text style={[styles.resultSub, { color: safeTheme.textSecondary }]}>{r.item.category} • {r.item.amount}</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -164,8 +172,8 @@ export default function GlobalSearch({ visible, onClose, navigation, transaction
             />
           )}
 
-          <View style={[styles.footer, { borderTopColor: theme.background[0] }]}>
-            <Text style={[styles.footerText, { color: theme.textSecondary }]}>Press ESC or tap outside to close</Text>
+          <View style={[styles.footer, { borderTopColor: safeTheme.background[0] }]}>
+            <Text style={[styles.footerText, { color: safeTheme.textSecondary }]}>Press ESC or tap outside to close</Text>
           </View>
         </View>
       </TouchableOpacity>

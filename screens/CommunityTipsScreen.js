@@ -266,7 +266,6 @@ export default function CommunityTipsScreen({ navigation }) {
               );
             }
           } catch (error) {
-            console.log('Verification failed, but tip posted successfully');
           }
         }
         

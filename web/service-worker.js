@@ -8,16 +8,19 @@ importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js')
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
 // Initialize Firebase for messaging
-firebase.initializeApp({
-  apiKey: "AIzaSyCNsGqskpxHTGH_YueMeQ46ACvCPx4yhL8",
-  authDomain: "spedflowapp.firebaseapp.com",
-  databaseURL: "https://spedflowapp-default-rtdb.firebaseio.com",
-  projectId: "spedflowapp",
-  storageBucket: "spedflowapp.firebasestorage.app",
-  messagingSenderId: "678556676280",
-  appId: "1:678556676280:web:dcf726cfb649338a0b844d",
-  measurementId: "G-XQ10LTCEY8"
-});
+// Configuration is injected at build time from environment variables
+const firebaseConfig = {
+  apiKey: self.FIREBASE_API_KEY || "",
+  authDomain: self.FIREBASE_AUTH_DOMAIN || "",
+  databaseURL: self.FIREBASE_DATABASE_URL || "",
+  projectId: self.FIREBASE_PROJECT_ID || "",
+  storageBucket: self.FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: self.FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: self.FIREBASE_APP_ID || "",
+  measurementId: self.FIREBASE_MEASUREMENT_ID || ""
+};
+
+firebase.initializeApp(firebaseConfig);
 
 // Initialize Firebase Messaging
 const messaging = firebase.messaging();

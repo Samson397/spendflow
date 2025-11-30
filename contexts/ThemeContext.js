@@ -6,70 +6,100 @@ import AnalyticsService from '../services/AnalyticsService';
 
 const STORAGE_KEY = 'SPENDFLOW_SELECTED_THEME';
 
-const ThemeContext = createContext({
-  theme: Themes.SleekMinimalDefault, // fallback
+// Create the context
+export const ThemeContext = createContext({
+  theme: {},
   themes: {},
-  applyTheme: async (id) => {},
+  applyTheme: () => {},
+  themeId: 'sleek_minimal',
 });
 
-export function ThemeProvider({ children }) {
+// Create the provider component
+export const ThemeProvider = ({ children }) => {
   const themeMap = {
-    // Classic themes
-    sleek_minimal: Themes.SleekMinimal,
-    dark_pro: Themes.DarkPro,
-    bold_gradient: Themes.BoldGradient,
-    banking_professional: Themes.BankingProfessional,
-    soft_pastel: Themes.SoftPastel,
-    glassmorphism: Themes.Glassmorphism,
-    // Futuristic themes
-    cyber_neon: Themes.CyberNeon,
-    matrix_green: Themes.MatrixGreen,
-    neon_sunset: Themes.NeonSunset,
-    aurora_boreal: Themes.AuroraBoreal,
-    deep_space: Themes.DeepSpace,
-    hologram_blue: Themes.HologramBlue,
-    techno_red: Themes.TechnoRed,
-    quantum_purple: Themes.QuantumPurple,
+    sleek_minimal: Themes.SleekMinimal || {},
+    dark_pro: Themes.DarkPro || {},
+    bold_gradient: Themes.BoldGradient || {},
+    banking_professional: Themes.BankingProfessional || {},
+    soft_pastel: Themes.SoftPastel || {},
+    glassmorphism: Themes.Glassmorphism || {},
+    cyber_neon: Themes.CyberNeon || {},
+    matrix_green: Themes.MatrixGreen || {},
+    neon_sunset: Themes.NeonSunset || {},
+    aurora_boreal: Themes.AuroraBoreal || {},
+    deep_space: Themes.DeepSpace || {},
+    hologram_blue: Themes.HologramBlue || {},
+    techno_red: Themes.TechnoRed || {},
+    quantum_purple: Themes.QuantumPurple || {},
   };
 
   const [themeId, setThemeId] = useState('sleek_minimal');
-  const [theme, setTheme] = useState(themeMap[themeId]);
+  const [theme, setTheme] = useState(themeMap['sleek_minimal'] || {
+    id: 'sleek_minimal',
+    name: 'Sleek Minimal',
+    gradient: ['#007AFF', '#60A5FA'],
+    background: ['#F2F2F7', '#F2F2F7'],
+    cardBg: '#FFFFFF',
+    primary: '#007AFF',
+    accent: '#34C759',
+    text: '#1C1C1E',
+    textSecondary: '#6B7280',
+  });
 
-  // load saved theme
+  // Load saved theme on mount
   useEffect(() => {
-    (async () => {
+    const loadTheme = async () => {
       try {
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        if (saved && themeMap[saved]) {
-          setThemeId(saved);
-          setTheme(themeMap[saved]);
+        const savedThemeId = await AsyncStorage.getItem(STORAGE_KEY);
+        if (savedThemeId && themeMap[savedThemeId]) {
+          setThemeId(savedThemeId);
+          setTheme(themeMap[savedThemeId]);
         }
-      } catch (e) {
-        console.warn('Failed to load theme', e);
+      } catch (error) {
+        console.warn('Failed to load theme', error);
       }
-    })();
+    };
+    loadTheme();
   }, []);
 
-  const applyTheme = useCallback(
-    async (id) => {
-      if (!themeMap[id]) return;
-      try {
-        await AsyncStorage.setItem(STORAGE_KEY, id);
+  const applyTheme = useCallback(async (id) => {
+    if (!themeMap[id]) return;
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, id);
+      if (AnalyticsService && typeof AnalyticsService.trackThemeChanged === 'function') {
         AnalyticsService.trackThemeChanged(id);
-      } catch (e) {
-        console.warn('Failed to save theme', e);
       }
       setThemeId(id);
       setTheme(themeMap[id]);
-    },
-    [setTheme, setThemeId]
-  );
+    } catch (error) {
+      console.warn('Failed to save theme', error);
+    }
+  }, [themeMap]);
 
   return (
-    <ThemeContext.Provider value={{ theme, themes: themeMap, applyTheme, themeId }}>
+    <ThemeContext.Provider value={{ 
+      theme: theme || {
+        id: 'sleek_minimal',
+        name: 'Sleek Minimal',
+        gradient: ['#007AFF', '#60A5FA'],
+        background: ['#F2F2F7', '#F2F2F7'],
+        cardBg: '#FFFFFF',
+        primary: '#007AFF',
+        accent: '#34C759',
+        text: '#1C1C1E',
+        textSecondary: '#6B7280',
+      }, 
+      themes: themeMap, 
+      applyTheme, 
+      themeId 
+    }}>
       {children}
     </ThemeContext.Provider>
   );
-}
+};
 
+// Custom hook to use the theme
 export const useTheme = () => useContext(ThemeContext);
+
+// Export the context and provider
+export default ThemeProvider;
